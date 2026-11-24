@@ -1,35 +1,27 @@
-# CR-527a — IMPLEMENTATION PLAN (Gate 3) — TAB holder → `cust_*` (Option B)
+# CR-527a — IMPLEMENTATION PLAN v2 (Gate 3, redo) — TAB holder → `cust_*` + CRM-create holder
 
-**ID:** CR-527 (slice "a")  **Role:** PLANNING (Gate 3 — plan only, NO code)  **Date:** 2026-11-24
+**ID:** CR-527 (slice "a")  **Role:** PLANNING (Gate 3 — plan only, NO code)  **Date:** 2026-11-24 (v2 supersedes v1)
 **Risk:** HIGH  **Client:** ALL  **Assignee:** Abhishek
 **IA:** `impact/CR-527_CUST_HOLDER_REMAP_IMPACT_ANALYSIS.md`
-**Owner decisions locked:** OD-527a-1 = **YES** (cust_* = holder on TAB/credit) · OD-527a-2 = **ship FE workaround only** · OD-527a-3 = **holder-not-CRM-linked → `cust_membership_id` BLANK, never diner id**
+**ODs locked:** OD-527a-1 YES (cust_*=holder) · OD-527a-2 ship FE only · OD-527a-3 membership never = diner
+**NEW question this redo answers (owner):** *"Can't we create that holder in CRM (`/pos/customers`) as order entry does, instead of sending blank?"* → **Yes — that mechanism already exists; v2 makes it reliable at submit.**
 
-## Source & deviation note
-Base = branch `notification-fix` (`8c80bfe`, single squashed commit). Cherry-pick is **per-hunk** (not `git cherry-pick <sha>`).
-**DEVIATION from `nf` (required by OD-527a-3):** `nf` sets `cust_membership_id: isTab ? (tabContact?.crmId || customer?.id || '') : …` — it **falls back to the diner's id**. The plan **drops `|| customer?.id`** in the `isTab` branch so it goes **blank**. `cust_name`/`cust_mobile`/`cust_country_code` keep the holder-first-then-customer fallback (a valid TAB always carries holder name/phone; this only guards a degenerate empty-holder case).
+## Finding that drove the redo
+`CollectPaymentPanel` already runs the **same CRM lookup-or-create as order entry** for the TAB holder:
+- Effect L634–666: when holder phone is valid, `lookupCustomer(tabPhone)` → if found `setTabCrmId(found.id)`; else `createCustomer({name,phone,cc}, restaurant.id)` → `setTabCrmId(created.id)`.
+- It is **debounced + fire-and-forget** ("Never blocks bill confirmation", `.catch(()=>{})`). Same pattern as order-entry's customer (CartPanel L1105/1123).
+- `tabCrmId` → `tabContact.crmId` at submit (L1317), consumed by `handlePayment` (async, L1296 builds paymentData → L1388 `onPaymentComplete`).
 
-## Scope lock
-- **WILL change:** `frontend/src/api/transforms/orderTransform.js` (2 spots), `frontend/src/api/transforms/__tests__/orderTransform.cr527.test.js`.
-- **WILL NOT touch:** unpaid `place-order` (L1112) + update-place-order (L1248), cash/card/upi/paylater `cust_*`, `name`/`mobile`/`crm_customer_id` TAB block (already holder), `diner_*` block, CollectPaymentPanel, sockets, print, reports.
+So the holder **is** created in CRM; `cust_membership_id` is only blank in the **residual race/failure window** (cashier submits before the async create resolves, or CRM errored). v2 closes that window by resolving the holder id **at submit** — exactly "create like order entry", just awaited.
 
 ---
 
-## Edit 1 — `placeOrderWithPayment` (prepaid place + Credit), main L1414–1421
-**Current:**
+## Part A — `orderTransform.js` (cherry-pick from `notification-fix`, with OD-527a-3 deviation)
+
+### Edit 1 — `placeOrderWithPayment`, main L1414–1421
+Replace the BUG-672 customer-first block with holder-first; `cust_membership_id` blank-not-diner:
 ```js
-      // BUG-672 Phase 2: fallback to tabContact when customer not linked (prepaid TAB)
-      cust_name:                  customer?.name || (isTab ? tabContact?.name : '') || '',
-      cust_mobile:                customer?.phone || (isTab ? tabContact?.phone : '') || '',
-      cust_country_code:          customer?.countryCode || (isTab ? tabContact?.countryCode : '') || '+91', // CR-479
-      cust_email:                 customer?.email || '',
-      cust_dob:                   customer?.dob || '',
-      cust_anniversary:           customer?.anniversary || '',
-      cust_membership_id:         customer?.id || (isTab ? tabContact?.crmId : '') || '',
-```
-**New:**
-```js
-      // CR-527a (OD-527a-1): TAB → cust_* = tab holder (Daily Report CUSTOMER + CRM); diner stays in diner_*. Supersedes BUG-672 customer-first fallback.
+      // CR-527a (OD-527a-1): TAB → cust_* = tab holder; diner stays in diner_*. Supersedes BUG-672 customer-first fallback.
       cust_name:                  isTab ? (tabContact?.name || customer?.name || '') : (customer?.name || ''),
       cust_mobile:                isTab ? (tabContact?.phone || customer?.phone || '') : (customer?.phone || ''),
       cust_country_code:          isTab ? (tabContact?.countryCode || customer?.countryCode || '+91') : (customer?.countryCode || '+91'), // CR-479
@@ -40,15 +32,7 @@ Base = branch `notification-fix` (`8c80bfe`, single squashed commit). Cherry-pic
       cust_membership_id:         isTab ? (tabContact?.crmId || '') : (customer?.id || ''),
 ```
 
-## Edit 2 — `collectBillExisting` (postpaid Collect Bill → Credit), main L1793–1796
-**Current:**
-```js
-      cust_name:          customer?.name  || '',
-      cust_mobile:        customer?.phone || '',
-      cust_country_code:  customer?.countryCode || '+91', // CR-479
-      cust_membership_id: customer?.id    || '',
-```
-**New:**
+### Edit 2 — `collectBillExisting`, main L1793–1796
 ```js
       // CR-527a (OD-527a-1): TAB → cust_* = tab holder; diner stays in diner_*.
       cust_name:          isTab ? (tabContact?.name || customer?.name || '') : (customer?.name || ''),
@@ -57,38 +41,77 @@ Base = branch `notification-fix` (`8c80bfe`, single squashed commit). Cherry-pic
       // CR-527a (OD-527a-3): holder not CRM-linked → BLANK; never fall back to diner id.
       cust_membership_id: isTab ? (tabContact?.crmId || '') : (customer?.id || ''),
 ```
-
-## Edit 3 — `orderTransform.cr527.test.js`
-1. Cherry-pick the `nf` +46 lines verbatim (2 new "holder in cust_*" tests for placeOrder + collectBill + crmId on existing tests). These pass under the deviation (they all pass a populated `crmId`).
-2. **ADD 2 edge tests (OD-527a-3):** TAB with `tabContact.crmId` absent + `customer.id='crm-diner-1'`:
-   - `placeOrderWithPayment`: `expect(cust_membership_id).toBe('')` and `cust_name === tabContact.name`.
-   - `collectBillExisting`: same.
+> **Deviation from `nf`:** nf uses `tabContact?.crmId || customer?.id || ''` — drops the `|| customer?.id`.
 
 ---
 
-## Verification Matrix (seeds QA)
-| # | File | Change | How to verify | Automated? |
-|---|------|--------|---------------|:--:|
-| 1 | orderTransform.js L1414-1421 | placeOrder cust_* holder-first; membership blank-not-diner | Unit: cr527 placeOrder holder + edge tests | YES |
-| 2 | orderTransform.js L1793-1796 | collectBill cust_* holder-first; membership blank-not-diner | Unit: cr527 collectBill holder + edge tests | YES |
-| 3 | cr527.test.js | holder-in-cust_* + crmId-blank edge | `npx craco test --watchAll=false --testPathPattern=cr527` all green | YES |
-| 4 | — | non-TAB unchanged | Unit: existing cash "NO diner fields" + cash cust_* = customer | YES |
-| 5 | — | BUG-672 prepaid move-to-credit still works | Browser: prepaid order → move to credit, holder captured in cust_* | NO |
-| 6 | — | live write-probe holder≠diner | Browser (`pms@macha`, preprod rest 69): place credit order holder≠diner → request cust_*=holder, diner_*=diner; then Report CUSTOMER + Credit Mgmt = holder | NO |
-| 7 | — | holder not CRM-linked | Browser: TAB holder without CRM link → cust_membership_id blank, order still books | NO |
+## Part B — `CollectPaymentPanel.jsx` ensure-holder-CRM-id at submit  ⚠ NET-NEW (NOT on `notification-fix`)
 
-## Post-Code Registry Checklist (Implementation agent runs after coding)
-- [ ] registry.json: CR-527 status → note CR-527a IMPLEMENTED (GATE_5A), keep capture-phase history
-- [ ] CR_REGISTRY.md: CR-527 row → CR-527a IMPLEMENTED
-- [ ] FILE_OWNERSHIP.md: `orderTransform.js` += CR-527a cust_* holder-first (L1414-1421 + L1793-1796)
-- [ ] Code markers: `// CR-527a` present in both edited blocks
-- [ ] webpack compiles 0 new warnings; `cr527` unit suite green
+In `handlePayment` (async, L~1266), **before** building `paymentData` (L1296), add a bounded resolve so `tabContact.crmId` is the holder's real CRM id:
+
+```js
+// CR-527a: guarantee the TAB holder exists in CRM (parity with order-entry customer create),
+// so cust_membership_id carries the HOLDER id, not blank. Never hard-blocks the bill.
+let resolvedTabCrmId = tabCrmId;
+if (isTabPayment && !resolvedTabCrmId && tabName.trim() && isValidTabPhone) {
+  try {
+    const found = await lookupCustomer(tabPhone, tabCountryCode);
+    if (found?.id) resolvedTabCrmId = found.id;
+    else {
+      const created = await createCustomer({ name: tabName.trim(), phone: tabPhone, countryCode: tabCountryCode }, restaurant?.id);
+      if (created?.id) resolvedTabCrmId = created.id;
+    }
+  } catch (e) {
+    // CRM_TIMEOUT / failure → proceed with BLANK membership (OD-527a-3). NEVER diner. Non-blocking toast.
+    toast?.({ title: 'Credit saved', description: 'Holder not linked to CRM (offline) — you can link later.', });
+  }
+}
+```
+Then at L1317 build: `tabContact: isTabPayment ? { name: tabName, phone: tabPhone, crmId: resolvedTabCrmId || '', countryCode: tabCountryCode } : null`.
+
+**Design guards:**
+- Reuse existing `lookupCustomer`/`createCustomer` (already imported L11). **No refactor / no shared helper.**
+- Bounded by the existing `crmApi` axios timeout; on timeout/error → blank + continue (preserves the current "never block bill confirmation" rule).
+- Only runs when `isTabPayment && !tabCrmId` — the common selected/already-resolved path is untouched (zero added latency).
+- `isValidTabPhone` = same rule as L640 (`+91` ⇒ len 10, else ≥6).
+
+---
+
+## Part C — tests (`orderTransform.cr527.test.js`)
+1. Cherry-pick nf +46 (holder-in-`cust_*` for placeOrder + collectBill; crmId on existing tests).
+2. **ADD** edge: TAB + `tabContact.crmId` absent + `customer.id` present → `cust_membership_id === ''` (both builders).
+3. (Optional) light test/manual note for Part B resolve (lookup-or-create at submit) — covered by Verify #6 browser probe.
+
+---
+
+## Verification Matrix
+| # | Scope | Verify | Auto |
+|---|------|--------|:--:|
+| 1 | orderTransform placeOrder | holder-first cust_*; membership blank-not-diner | YES (unit) |
+| 2 | orderTransform collectBill | holder-first cust_*; membership blank-not-diner | YES (unit) |
+| 3 | non-TAB | cash/card/upi cust_* = customer; no diner fields | YES (unit) |
+| 4 | Part B resolve | isTab + no crmId + holder name/phone → lookup→create → tabContact.crmId set | NO (browser, `pms@macha`) |
+| 5 | Part B failure | CRM offline → bill still completes, membership blank, non-blocking toast | NO |
+| 6 | live write-probe | holder≠diner credit order → request cust_*=holder, diner_*=diner → Report CUSTOMER + Credit Mgmt = holder | NO |
+| 7 | BUG-672 regress | prepaid move-to-credit still captures holder in cust_* | NO |
+
+## Post-Code Registry Checklist
+- [ ] registry.json CR-527 → CR-527a IMPLEMENTED (GATE_5A); keep capture-phase history
+- [ ] CR_REGISTRY.md row updated
+- [ ] FILE_OWNERSHIP.md += `orderTransform.js` (cust_* holder) **and** `CollectPaymentPanel.jsx` (Part B ensure-holder)
+- [ ] `// CR-527a` markers in all 3 edited spots
+- [ ] webpack 0 new warnings; `cr527` unit green
 
 ## Risk register & rollback
-- HIGH — re-attributes CRM spend/loyalty to holder on credit bills (owner-approved OD-527a-1). Mitigate via Verify #5/#6/#7 before Gate-5 close.
-- Shared-line with BUG-672 (placeOrder) → Verify #5 regress.
-- **Rollback:** revert the 2 hunks in `orderTransform.js` (self-contained, no dependency on other nf files); test file revert optional.
-- **Backend durability (OD-527a-2 = FE only):** backend still sets `user_name` from `cust_name`; no backend change this pass. Recommend logging a backend brief so a future backend "fix" doesn't double-flip — **owner chose FE-only, so backend brief is optional/deferred, not a blocker.**
+- **HIGH** — re-attributes CRM spend to holder (OD-527a-1, approved). Verify #6.
+- **Part B adds an awaited CRM call to the credit-submit path** (only when holder id missing). Mitigated by timeout→blank fallback so it never hard-blocks. New surface not on `nf` → needs its own browser QA (#4/#5).
+- Shared-line with BUG-672 (Edit 1) → Verify #7.
+- **Rollback:** Part A = revert 2 hunks in `orderTransform.js`; Part B = remove the resolve block in `handlePayment` + restore `crmId: tabCrmId` at L1317. Self-contained.
 
-**Gate status:** GATE_3_PLAN_COMPLETE. No code written (PLANNING role).
-**Next:** Owner **Gate-4 GO** → IMPLEMENTATION (cherry-pick Edits 1-2 with OD-527a-3 deviation + Edit 3 tests), then QA Verify #1-#7.
+## Open owner decision (BLOCKS Gate-4 for Part B only)
+- **OD-527a-4:** Approve **Part B await-at-submit** (guarantees holder CRM id; may add up to the CRM timeout before Collect/Place completes when the holder was typed and not yet resolved; falls back to blank on failure)? 
+  - **Recommended: YES** — directly implements "create the holder like order entry". 
+  - Alternative: ship **Part A only** (membership blank in the rare race window; holder still auto-created async by the existing effect) — smaller, no submit-path change.
+
+**Gate status:** GATE_3_PLAN_COMPLETE (v2). No code written (PLANNING role).
+**Next:** Owner picks OD-527a-4 (Part A only, or Part A+B) + **Gate-4 GO** → IMPLEMENTATION.

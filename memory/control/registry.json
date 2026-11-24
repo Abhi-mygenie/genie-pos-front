@@ -38544,7 +38544,7 @@
         "frontend/src/components/order-entry/CollectPaymentPanel.jsx",
         "frontend/src/components/reports/OrderDetailSheet.jsx"
       ],
-      "next_action": "CR-527a slice: GATE_3_PLAN_COMPLETE 2026-11-24 (plans/CR-527_CUST_HOLDER_REMAP_IMPLEMENTATION_PLAN.md). ODs locked: OD-527a-1 YES (cust_*=holder), OD-527a-2 ship FE only, OD-527a-3 membership BLANK not diner. 2 edits orderTransform.js (holder-first; DEVIATION from nf: drop '|| customer?.id' on cust_membership_id isTab branch) + cr527 tests (cherry-pick +46 + 2 edge tests). AWAITING OWNER GATE-4 GO -> IMPLEMENTATION cherry-pick. [capture phase] QA browser flow + live write-probe Part A still pending."
+      "next_action": "CR-527a slice: GATE_3_PLAN_COMPLETE v2 2026-11-24 (plans/CR-527_CUST_HOLDER_REMAP_IMPLEMENTATION_PLAN.md). v2 adds Part B (NET-NEW, not on nf): CollectPaymentPanel.handlePayment awaits lookup-or-create of TAB holder (parity with order-entry) so cust_membership_id = holder CRM id, blank-fallback on CRM failure (never diner). Part A = orderTransform holder-first (2 edits, deviation from nf drops '|| customer?.id'). NEW OD-527a-4 (Part A only vs Part A+B) + GATE-4 GO pending. [capture phase] QA browser flow + live write-probe Part A still pending."
     },
     {
       "id": "CR-528",
