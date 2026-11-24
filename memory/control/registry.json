@@ -42019,11 +42019,71 @@
       "area": "Order Entry",
       "files": "components/order-entry/OrderEntry.jsx",
       "next_action": "PLANNING Gate 3 (Phase 5) \u2014 recommended first"
+    },
+    {
+      "id": "BUG-751",
+      "title": "YTC/confirm popup does not open after browser reload when FCM/socket arrives",
+      "type": "BUG",
+      "severity": "P1",
+      "risk": "MEDIUM",
+      "status": "GATE_3_PLAN_COMPLETE 2026-11-24 \u2014 FCM reload-ring Phase-3 pack (owner-directed). On reload the confirm/YTC FCM lands before/without the running-orders refresh, so ScanOrderPopOut never opens. Fix (ported from notification-fix, verified): NEW utils/ytcFcmPending.js + NEW components/notifications/YtcFcmHydrator.jsx (mounted under OrderProvider in AppProviders) + NotificationContext enqueue & mygenie:ytc-fcm dispatch + LoadingPage preserve pending optimistic YTC on setOrders. Deps on main confirmed (ScanOrderPopOut exports, fetchSingleOrderForSocket, OrderContext addOrder/updateOrder/getOrderById). Plan: plans/FCM_RELOAD_PHASE3_PACK_IMPLEMENTATION_PLAN.md. Awaiting Gate-4 GO.",
+      "gate": "GATE_3_PLAN_COMPLETE",
+      "current_gate": 3,
+      "sprint_key": "nov_cr_batch",
+      "client": "ALL",
+      "assignee": "Abhishek",
+      "registered_date": "2026-11-24",
+      "source": "OWNER-REPORTED (2026-11-24) + AGENT-TRACED (branch notification-fix)",
+      "related": [
+        "CR-562",
+        "BUG-747",
+        "BUG-749"
+      ],
+      "impact_doc": "impact/FCM_RING_REBUILD_MAIN_IMPACT_ANALYSIS.md",
+      "plan_doc": "plans/FCM_RELOAD_PHASE3_PACK_IMPLEMENTATION_PLAN.md",
+      "open_decisions": [
+        "OD-751-01 confirm P1/MEDIUM"
+      ],
+      "description": "After reload, inbound confirm/YTC FCM is not bridged into OrderContext during /loading so ScanOrderPopOut does not open until a full refresh. Fix: pending-queue + always-mounted hydrator (optimistic minimal order then fetchSingleOrderForSocket enrich) + LoadingPage merge-preserve.",
+      "priority": "P1",
+      "area": "Notifications",
+      "files": "utils/ytcFcmPending.js (NEW); components/notifications/YtcFcmHydrator.jsx (NEW); contexts/AppProviders.jsx; contexts/NotificationContext.jsx; pages/LoadingPage.jsx",
+      "next_action": "Gate-4 GO -> IMPLEMENTATION (Phase-3 pack)"
+    },
+    {
+      "id": "BUG-752",
+      "title": "Long confirm buzzer not stopped by ScanOrderPopOut Accept/Reject/cancel-item/reject-new",
+      "type": "BUG",
+      "severity": "P2",
+      "risk": "MEDIUM",
+      "status": "GATE_3_PLAN_COMPLETE 2026-11-24 \u2014 FCM reload-ring Phase-3 pack (owner-directed). ScanOrderPopOut Accept/Reject/cancel-item/reject-new do not call soundManager.stop() (only Snooze does), so a long confirm buzzer (forty_five_sec_buzzer) keeps ringing after staff act. Fix (ported from notification-fix): stopBuzzer() helper wired into handleAcceptClick/handleRejectClick/handleCancelItemClick/handleRejectNewItemsClick (stop-only; honours the file's no-play/no-setEnabled import rule). Plan: plans/FCM_RELOAD_PHASE3_PACK_IMPLEMENTATION_PLAN.md. Awaiting Gate-4 GO.",
+      "gate": "GATE_3_PLAN_COMPLETE",
+      "current_gate": 3,
+      "sprint_key": "nov_cr_batch",
+      "client": "ALL",
+      "assignee": "Abhishek",
+      "registered_date": "2026-11-24",
+      "source": "OWNER-REPORTED (2026-11-24) + AGENT-TRACED (branch notification-fix)",
+      "related": [
+        "BUG-453",
+        "BUG-747",
+        "BUG-750"
+      ],
+      "impact_doc": "impact/FCM_RING_REBUILD_MAIN_IMPACT_ANALYSIS.md",
+      "plan_doc": "plans/FCM_RELOAD_PHASE3_PACK_IMPLEMENTATION_PLAN.md",
+      "open_decisions": [
+        "OD-752-01 confirm P2/MEDIUM"
+      ],
+      "description": "Only Snooze stops the buzzer in ScanOrderPopOut; Accept/Reject/cancel-item/reject-new leave the long confirm buzzer ringing. Fix: stop-only stopBuzzer() on those actions.",
+      "priority": "P2",
+      "area": "Dashboard / Notifications",
+      "files": "components/dashboard/ScanOrderPopOut.jsx",
+      "next_action": "Gate-4 GO -> IMPLEMENTATION (Phase-3 pack)"
     }
   ],
   "meta": {
     "last_updated": "2026-11-24",
-    "last_action": "IMPLEMENTATION: CR-562 Phase 1 (FCM messaging-ready race + async listener re-attach) shipped on main; unit 2/2 PASS, webpack clean. Pending granted-device browser E2E. Next: Phase 2 BUG-749.",
+    "last_action": "PLANNING Gate 3: FCM reload-ring Phase-3 PACK plan written (BUG-747 autoplay unlock + BUG-751 YTC reload popup + BUG-752 popup-action buzzer stop); BUG-751/752 registered. Awaiting Gate-4 GO. plans/FCM_RELOAD_PHASE3_PACK_IMPLEMENTATION_PLAN.md",
     "current_gate": "3",
     "last_qa_batch": "CR-528 + CR-546 (Audit Report v3) 2026-11-18",
     "last_qa_date": "2026-11-18",
