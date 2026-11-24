@@ -38528,6 +38528,21 @@
           "label": "Implementation Plan (CR-527a cust_* holder re-map)",
           "path": "memory/plans/CR-527_CUST_HOLDER_REMAP_IMPLEMENTATION_PLAN.md",
           "type": "plan"
+        },
+        {
+          "label": "QA Handover (CR-527a)",
+          "path": "memory/handover/QA_HANDOVER_CR-527a_2026-11-24.md",
+          "type": "qa"
+        },
+        {
+          "label": "Session Handover (CR-527a shipped + notification-fix gap)",
+          "path": "memory/handover/SESSION_HANDOVER_2026-11-24_CR-527a_SHIPPED_AND_NOTIFICATION_FIX_GAP.md",
+          "type": "handover"
+        },
+        {
+          "label": "Backend reply — CR-527 API contract (LOCKED) + preprod verification",
+          "path": "memory/contracts/BATCH-B_CR-527_API_CONTRACT_2026_11_15.md",
+          "type": "backend"
         }
       ],
       "release_date": "2026-11-17",
