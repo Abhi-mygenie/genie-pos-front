@@ -1293,6 +1293,30 @@ const CollectPaymentPanel = ({
     // effectiveTotal is now defined at top-level (after BUG-ROOM-CASH-PILLS
     // fix); local recomputation removed — top-level const is the single
     // source of truth for the combined grand total.
+
+    // CR-527a (OD-527a-4): guarantee the TAB holder exists in CRM (parity with the
+    // order-entry customer create at CartPanel L1105/1123) so cust_membership_id carries
+    // the HOLDER id, not blank. Only runs when a TAB holder was typed but not yet resolved
+    // (tabCrmId empty); the selected/already-resolved path skips it (no added latency).
+    // CRM timeout/failure -> proceed with BLANK membership (OD-527a-3). NEVER the diner id.
+    let resolvedTabCrmId = tabCrmId;
+    if (isTabPayment && !resolvedTabCrmId && tabName.trim()) {
+      const isValidTabPhone = tabCountryCode === '+91' ? tabPhone.length === 10 : tabPhone.length >= 6; // mirror L640
+      if (isValidTabPhone) {
+        try {
+          const foundHolder = await lookupCustomer(tabPhone, tabCountryCode);
+          if (foundHolder?.id) {
+            resolvedTabCrmId = foundHolder.id;
+          } else {
+            const createdHolder = await createCustomer({ name: tabName.trim(), phone: tabPhone, countryCode: tabCountryCode }, restaurant?.id);
+            if (createdHolder?.id) resolvedTabCrmId = createdHolder.id;
+          }
+        } catch (e) {
+          toast('Credit saved — holder not linked to CRM (offline). You can link later.');
+        }
+      }
+    }
+
     const paymentData = {
       method:          paymentMethod,
       finalTotal:      effectiveTotal,
@@ -1314,7 +1338,7 @@ const CollectPaymentPanel = ({
       transactionId:   paymentMethod === 'card' ? cardTxnId : '',
       tip,
       splitPayments:   showSplit ? splitPayments.map(p => ({ method: p.method, amount: parseFloat(p.amount) || 0, transactionId: p.method === 'card' ? (p.transactionId || '') : '' })) : null,
-      tabContact:      isTabPayment ? { name: tabName, phone: tabPhone, crmId: tabCrmId, countryCode: tabCountryCode } : null, // BUG-183 + BUG-636 E3: +countryCode
+      tabContact:      isTabPayment ? { name: tabName, phone: tabPhone, crmId: resolvedTabCrmId || '', countryCode: tabCountryCode } : null, // BUG-183 + BUG-636 E3 + CR-527a: resolved holder CRM id
       dinerContact:    isTabPayment ? { name: dinerName.trim(), phone: dinerPhone.trim() } : null, // CR-527: diner distinct from holder
       // discount info — all fields needed by collect bill payload (OLD POS parity)
       discounts: {

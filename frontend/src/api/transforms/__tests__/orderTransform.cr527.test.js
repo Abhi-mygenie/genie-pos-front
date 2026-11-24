@@ -36,16 +36,50 @@ describe('CR-527 — placeOrderWithPayment diner emit (TAB)', () => {
   const table = { orderId: 1, table_no: '5' };
   const customer = {};
 
-  test('credit order emits diner_name/diner_mobile from dinerContact', () => {
+  test('credit order emits diner_name/diner_mobile + holder in cust_* (CR-527a)', () => {
     const payload = orderTransform.toAPI.placeOrderWithPayment(
       table, [], customer, 'dinein',
       { method: 'credit',
-        tabContact: { name: 'Saurav', phone: '9800000001' },
+        tabContact: { name: 'Saurav', phone: '9800000001', crmId: 'crm-holder-1' },
         dinerContact: { name: 'Abhishek', phone: '9800000002' } },
     );
     expect(payload.diner_name).toBe('Abhishek');
     expect(payload.diner_mobile).toBe('9800000002');
-    expect(payload.name).toBe('Saurav'); // holder stays in TAB name/mobile (Option A)
+    expect(payload.name).toBe('Saurav'); // holder stays in TAB name/mobile
+    // CR-527a: cust_* = holder (CRM / Daily Report customer), not the outer diner
+    expect(payload.cust_name).toBe('Saurav');
+    expect(payload.cust_mobile).toBe('9800000001');
+    expect(payload.cust_membership_id).toBe('crm-holder-1');
+  });
+
+  test('CR-527a — TAB prefers tab holder over outer customer for cust_*', () => {
+    const payload = orderTransform.toAPI.placeOrderWithPayment(
+      table, [],
+      { name: 'patz', phone: '5556998821', id: 'crm-diner-1' },
+      'dinein',
+      { method: 'credit',
+        tabContact: { name: 'koji', phone: '9009000909', crmId: 'crm-holder-2' },
+        dinerContact: { name: 'patz', phone: '5556998821' } },
+    );
+    expect(payload.cust_name).toBe('koji');
+    expect(payload.cust_mobile).toBe('9009000909');
+    expect(payload.cust_membership_id).toBe('crm-holder-2');
+    expect(payload.diner_name).toBe('patz');
+    expect(payload.name).toBe('koji');
+    expect(payload.crm_customer_id).toBe('crm-holder-2');
+  });
+
+  test('CR-527a (OD-527a-3) — holder not CRM-linked → cust_membership_id BLANK, never diner id', () => {
+    const payload = orderTransform.toAPI.placeOrderWithPayment(
+      table, [],
+      { name: 'patz', phone: '5556998821', id: 'crm-diner-1' },
+      'dinein',
+      { method: 'credit',
+        tabContact: { name: 'koji', phone: '9009000909' }, // no crmId
+        dinerContact: { name: 'patz', phone: '5556998821' } },
+    );
+    expect(payload.cust_name).toBe('koji');
+    expect(payload.cust_membership_id).toBe(''); // blank, NOT 'crm-diner-1'
   });
 
   test('cash order carries NO diner fields', () => {
@@ -62,15 +96,46 @@ describe('CR-527 — collectBillExisting diner emit (omit when blank)', () => {
   const table = { orderId: 1 };
   const customer = {};
 
-  test('emits diner_* when a diner was entered', () => {
+  test('emits diner_* when a diner was entered + holder in cust_* (CR-527a)', () => {
     const payload = orderTransform.toAPI.collectBillExisting(
       table, [], customer,
       { method: 'credit', finalTotal: 100,
-        tabContact: { name: 'Saurav', phone: '9800000001' },
+        tabContact: { name: 'Saurav', phone: '9800000001', crmId: 'crm-holder-1' },
         dinerContact: { name: 'Abhishek', phone: '9800000002' } },
     );
     expect(payload.diner_name).toBe('Abhishek');
     expect(payload.diner_mobile).toBe('9800000002');
+    expect(payload.cust_name).toBe('Saurav');
+    expect(payload.cust_mobile).toBe('9800000001');
+    expect(payload.cust_membership_id).toBe('crm-holder-1');
+  });
+
+  test('CR-527a — TAB collect bill puts holder in cust_* not order customer', () => {
+    const payload = orderTransform.toAPI.collectBillExisting(
+      table, [],
+      { name: 'oele', phone: '6779973245', id: 'crm-diner-1', countryCode: '+91' },
+      { method: 'credit', finalTotal: 100,
+        tabContact: { name: 'koji', phone: '9009000909', crmId: 'crm-holder-2', countryCode: '+91' },
+        dinerContact: { name: 'oele', phone: '6779973245' } },
+    );
+    expect(payload.cust_name).toBe('koji');
+    expect(payload.cust_mobile).toBe('9009000909');
+    expect(payload.cust_membership_id).toBe('crm-holder-2');
+    expect(payload.diner_name).toBe('oele');
+    expect(payload.name).toBe('koji');
+    expect(payload.crm_customer_id).toBe('crm-holder-2');
+  });
+
+  test('CR-527a (OD-527a-3) — collect bill holder not CRM-linked → cust_membership_id BLANK, never diner id', () => {
+    const payload = orderTransform.toAPI.collectBillExisting(
+      table, [],
+      { name: 'oele', phone: '6779973245', id: 'crm-diner-1' },
+      { method: 'credit', finalTotal: 100,
+        tabContact: { name: 'koji', phone: '9009000909' }, // no crmId
+        dinerContact: { name: 'oele', phone: '6779973245' } },
+    );
+    expect(payload.cust_name).toBe('koji');
+    expect(payload.cust_membership_id).toBe(''); // blank, NOT 'crm-diner-1'
   });
 
   test('OMITS diner_* when diner blank (does not wipe place-time diner)', () => {
