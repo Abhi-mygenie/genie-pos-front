@@ -38448,7 +38448,7 @@
       "id": "CR-527",
       "type": "CR",
       "title": "Credit Management: Filter Orders by Same Phone Number with Different Names",
-      "status": "IMPLEMENTED (capture phase) 2026-11-21 (GATE_5A). Option A additive (holder mapping unchanged). Shipped: CollectPaymentPanel gated Diner field + dinerContact thread; orderTransform placeOrderWithPayment TAB block + collectBillExisting (omit-when-blank) emit diner_name/diner_mobile; fromAPI.order + reportTransform.singleOrderNew read diner; OrderCard diner chip + OrderDetailSheet diner row (shown only when distinct from holder). Unit 6/6 PASS, webpack clean. QA PENDING (browser) + live write-probe (holder!=diner, Part A checklist) pending.",
+      "status": "RE-INTAKE 2026-11-24 (GATE_1_INTAKE) — slice CR-527a 'TAB holder -> cust_*' (Option B re-map, previously DEFERRED under OD-527-E). P1 / Risk HIGH. Implemented on branch notification-fix (orderTransform.js collectBillExisting + placeOrderWithPayment become holder-first when isTab; cr527.test.js asserts holder in cust_*). NOT in deployed main (07b8f43) -> main still customer-first so CUSTOMER=diner on Daily Report/CRM. Cherry-pick pending (per-hunk from nf 8c80bfe). Intake: change_requests/CR-527_CUST_HOLDER_REMAP_REINTAKE_INTAKE.md. || [capture phase] IMPLEMENTED (capture phase) 2026-11-21 (GATE_5A). Option A additive (holder mapping unchanged). Shipped: CollectPaymentPanel gated Diner field + dinerContact thread; orderTransform placeOrderWithPayment TAB block + collectBillExisting (omit-when-blank) emit diner_name/diner_mobile; fromAPI.order + reportTransform.singleOrderNew read diner; OrderCard diner chip + OrderDetailSheet diner row (shown only when distinct from holder). Unit 6/6 PASS, webpack clean. QA PENDING (browser) + live write-probe (holder!=diner, Part A checklist) pending.",
       "priority": "P0",
       "severity": "P1",
       "risk": "HIGH",
@@ -38513,6 +38513,11 @@
           "label": "QA Handover (capture phase)",
           "path": "memory/handover/QA_HANDOVER_CR-527_2026-11-21.md",
           "type": "qa"
+        },
+        {
+          "label": "Re-intake intake doc (CR-527a cust_* holder re-map)",
+          "path": "memory/change_requests/CR-527_CUST_HOLDER_REMAP_REINTAKE_INTAKE.md",
+          "type": "intake"
         }
       ],
       "release_date": "2026-11-17",
@@ -38529,7 +38534,7 @@
         "frontend/src/components/order-entry/CollectPaymentPanel.jsx",
         "frontend/src/components/reports/OrderDetailSheet.jsx"
       ],
-      "next_action": "QA (testing_agent) browser flow + live write-probe Part A (place credit order holder!=diner on preprod rest 69, verify employee-orders-list + tap-customer-record-list + get-single-order-new)."
+      "next_action": "CR-527a slice: PLANNING Gate 2 (Impact Analysis) for cust_* holder re-map (Option B), then cherry-pick orderTransform.js + orderTransform.cr527.test.js hunks from notification-fix (no code until Gate-4 GO). [capture phase] QA browser flow + live write-probe Part A still pending."
     },
     {
       "id": "CR-528",
