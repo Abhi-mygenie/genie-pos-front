@@ -39645,7 +39645,7 @@
       "id": "CR-552",
       "type": "CR",
       "title": "Per-item approval for web-edit order items (item-level Yet-to-Confirm)",
-      "status": "GATE_5A_IMPLEMENTED — REGISTRY DRIFT corrected 2026-11-19 (QA Nov Sprint): IS in build, PARTIAL (no per-item Accept) || RE-INTAKE 2026-11-24 (GATE_1_INTAKE) — slice CR-552 UNSTICK (web-edit auto-confirm food_status=7). P1 / Risk HIGH. Distinct from the per-item-approval body already on main (GATE_5A): this is the OrderEntry.jsx auto-confirm after Update-Order (clears appended fos=7 + optional gated KOT), present only on notification-fix (OrderEntry.jsx L18 import + ~L1390 block). NOT on main (grep=0). Deps on main OK: confirmOrder/updatePrintStatus (orderService L82/95), printerAgentSelector, CR-559 scanOrderAutoPrint gate. CAUTION: git diff nf OrderEntry.jsx = +2/-39 (nf lags main) -> per-hunk port only, NOT a file copy. Open: OD-552-unstick-1 (P1/HIGH confirm), OD-552-unstick-2 (live backend probe: order-level confirmOrder flips only fos=7 lines, no double KOT), OD-552-unstick-3 (auto-KOT gated as nf). Intake: change_requests/CR-552_WEB_EDIT_UNSTICK_REINTAKE_INTAKE.md. Gap: INV-NOTIFICATION-FIX-DEPLOY-GAP-2026-11-24. Next PLANNING Gate 2.",
+      "status": "GATE_5A_IMPLEMENTED — REGISTRY DRIFT corrected 2026-11-19 (QA Nov Sprint): IS in build, PARTIAL (no per-item Accept) || RE-INTAKE 2026-11-24 (GATE_1_INTAKE) — slice CR-552 UNSTICK (web-edit auto-confirm food_status=7). P1 / Risk HIGH. Distinct from the per-item-approval body already on main (GATE_5A): this is the OrderEntry.jsx auto-confirm after Update-Order (clears appended fos=7 + optional gated KOT), present only on notification-fix (OrderEntry.jsx L18 import + ~L1390 block). NOT on main (grep=0). Deps on main OK: confirmOrder/updatePrintStatus (orderService L82/95), printerAgentSelector, CR-559 scanOrderAutoPrint gate. CAUTION: git diff nf OrderEntry.jsx = +2/-39 (nf lags main) -> per-hunk port only, NOT a file copy. Open: OD-552-unstick-1 (P1/HIGH confirm), OD-552-unstick-2 (live backend probe: order-level confirmOrder flips only fos=7 lines, no double KOT), OD-552-unstick-3 (auto-KOT gated as nf). Intake: change_requests/CR-552_WEB_EDIT_UNSTICK_REINTAKE_INTAKE.md. Gap: INV-NOTIFICATION-FIX-DEPLOY-GAP-2026-11-24. Next PLANNING Gate 2. || PLANNING Gate 2 (IA) 2026-11-24 — CR-552 UNSTICK slice GATE_2_IA_COMPLETE. IA: impact/CR-552_WEB_EDIT_UNSTICK_IMPACT_ANALYSIS.md. Code Reality NONE on main / FULL on nf. Insertion point found: OrderEntry.jsx Scenario-1 Update Order after L1387 (Socket engaged, before redirect). 4 edits: E1 import confirmOrder/updatePrintStatus (L18); E2 import printerAgentSelector; E3 add defaultOrderStatus to useRestaurant destructure (L67); E4 auto-confirm block. Owner dirs: KOT only for newly-added food_status=7 items (confirmItems stations); OD-552-unstick-3 RESOLVED = if no fos=7 remain -> no confirm + no auto-KOT (hasNotConfirm guard). Deps on main OK (confirmOrder/updatePrintStatus, printerAgentSelector, scanOrderAutoPrint, defaultOrderStatus via useRestaurant). Conflicts CLEAN (OrderEntry hotspot edits all line-disjoint, IMPLEMENTED). nf lags main +2/-39 -> per-hunk only. Risk HIGH. Gate-3 BLOCKER: OD-552-unstick-2 live confirm-order probe (order-level confirmOrder flips only fos=7, no double KOT). Next Gate 3.",
       "priority": "P1",
       "risk": "HIGH",
       "area": "Order Management / Dashboard",
@@ -39667,12 +39667,17 @@
       "qa_gate_status": "NOT IN TESTED BUILD (out of scope this pass; present only in newer main)",
       "qa_date": "2026-11-18",
       "qa_source": "memory/handover/HANDOVER_QA_NOV_SPRINT_2026_11_18.md §A",
-      "next_action": "CR-552 UNSTICK slice: GATE_1_INTAKE 2026-11-24. Next = PLANNING Gate 2 (IA) — trace mains Update-Order path, verify in-scope vars (getOrderById/placedOrderId/settings/permissions/defaultOrderStatus/printerAgents/isNotConfirmed/isWebOrder), define live backend confirm-order probe (OD-552-unstick-2). Per-hunk port from nf OrderEntry.jsx (nf lags main +2/-39 -> NOT file copy). Open: OD-552-unstick-1/-2/-3. No code until Gate-4 GO. || ",
+      "next_action": "CR-552 UNSTICK slice: GATE_2_IA_COMPLETE 2026-11-24. Next = PLANNING Gate 3 (Implementation Plan). Edits E1-E4 in OrderEntry.jsx (import confirmOrder/updatePrintStatus + printerAgentSelector + defaultOrderStatus destructure + auto-confirm block after L1387). Gate-3 close BLOCKED on OD-552-unstick-2 live confirm-order probe. Open: OD-552-unstick-1 (confirm P1/HIGH). IA: impact/CR-552_WEB_EDIT_UNSTICK_IMPACT_ANALYSIS.md. || CR-552 UNSTICK slice: GATE_1_INTAKE 2026-11-24. Next = PLANNING Gate 2 (IA) — trace mains Update-Order path, verify in-scope vars (getOrderById/placedOrderId/settings/permissions/defaultOrderStatus/printerAgents/isNotConfirmed/isWebOrder), define live backend confirm-order probe (OD-552-unstick-2). Per-hunk port from nf OrderEntry.jsx (nf lags main +2/-39 -> NOT file copy). Open: OD-552-unstick-1/-2/-3. No code until Gate-4 GO. || ",
       "artifact_refs": [
         {
           "label": "Re-intake intake doc (unstick slice)",
           "path": "memory/change_requests/CR-552_WEB_EDIT_UNSTICK_REINTAKE_INTAKE.md",
           "type": "intake"
+        },
+        {
+          "label": "Impact analysis (unstick slice)",
+          "path": "memory/impact/CR-552_WEB_EDIT_UNSTICK_IMPACT_ANALYSIS.md",
+          "type": "impact"
         }
       ]
     },
