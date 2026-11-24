@@ -1,3 +1,14 @@
+## 2026-11-24 — BUG-749 Phase 2 (FCM device-token boot register)
+| File | Change | Owner |
+|------|--------|-------|
+| `src/api/services/deviceTokenService.js` | **NEW** `registerDeviceToken(fcmToken)` → `POST DEVICE_TOKEN {fcm_token}` (bearer via axios interceptor); idempotent, no dedupe; non-blocking (try/catch → null). | BUG-749 Phase 2 IMPL 2026-11-24 |
+| `src/api/constants.js` | **BUG-749** added `DEVICE_TOKEN: '/api/v1/vendoremployee/device-token'` under Auth block (after `LOGOUT`). | BUG-749 Phase 2 IMPL 2026-11-24 |
+| `src/contexts/NotificationContext.jsx` | **BUG-749** NEW separate auth-gated boot effect (before "Sync sound enabled state"): `isAuthenticated` + `Notification.permission==='granted'` → `requestFCMToken()` → `registerDeviceToken(token)`, `cancelled` guard. Imports `requestFCMToken` (firebase) + `registerDeviceToken` (new service). CR-562 attach effect (L213-252) UNTOUCHED. | BUG-749 Phase 2 IMPL 2026-11-24 |
+| `src/__tests__/api/deviceTokenService.test.js` | NEW — POST shape + returns stored token; null token → no call; failure swallowed → null (3/3 PASS). | BUG-749 Phase 2 IMPL 2026-11-24 |
+
+NOT touched: `config/firebase.js` (Phase-1 locked, no fresh GO) · `LoginPage.jsx` · `authTransform.js` · `AuthContext.jsx` · `LoadingPage.jsx` · `soundManager.js` · `Sidebar.jsx`.
+
+
 ## 2026-11-24 — CR-562 Phase 1 (FCM reload-ring)
 | File | Change | Owner |
 |------|--------|-------|

@@ -1,10 +1,11 @@
 // NotificationContext - Manages incoming notifications, sound playback, and toast display
 import { createContext, useContext, useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useAuth } from './AuthContext';
-import { onForegroundMessage } from '../config/firebase';
+import { onForegroundMessage, requestFCMToken } from '../config/firebase';
 import soundManager from '../utils/soundManager';
 import { mapConfirmOrderTone, mapAggregatorOrderTone } from '../utils/toneMapper'; // BUG-600
 import { getRestaurantRef } from '../utils/restaurantRef';
+import { registerDeviceToken } from '../api/services/deviceTokenService'; // BUG-749
 
 const NotificationContext = createContext(null);
 
@@ -282,6 +283,24 @@ export const NotificationProvider = ({ children }) => {
       soundManager.stop(); soundManager.clearMutes(); // BUG-453: fresh mute state on next login
       setNotifications([]);
     }
+  }, [isAuthenticated]);
+
+  // BUG-749: register this device's FCM token with the backend on every
+  // authenticated boot/reload (incl. login-as-restaurant) so the backend can
+  // push to it. Granted-permission path only — no prompt on reload; the
+  // default/denied one-tap enable is Phase 4. Separate from the CR-562 attach
+  // effect so Phase 1 stays untouched. Idempotent backend, no client dedupe (D5).
+  useEffect(() => {
+    if (!isAuthenticated) return undefined;
+    if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return undefined;
+    let cancelled = false;
+    requestFCMToken().then((res) => {
+      const token = res?.token || (typeof res === 'string' ? res : null); // {error,token} new shape / legacy string
+      if (cancelled || !token) return;
+      registerDeviceToken(token); // fire-and-forget
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated]);
 
   // Sync sound enabled state
