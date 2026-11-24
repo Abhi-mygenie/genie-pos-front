@@ -18,6 +18,11 @@ const VAPID_KEY = process.env.REACT_APP_FIREBASE_VAPID_KEY;
 let app = null;
 let messaging = null;
 
+// CR-562: resolves once the async messaging init (BUG-560) settles — to the messaging
+// instance when supported, else null. Consumers await this instead of racing it on reload.
+let _resolveMessagingReady;
+export const whenMessagingReady = new Promise((r) => { _resolveMessagingReady = r; });
+
 try {
   app = initializeApp(firebaseConfig);
   console.log('[Firebase] App initialized');
@@ -37,7 +42,9 @@ if (app) {
     }
   }).catch((err) => {
     console.warn('[Firebase] isSupported check failed:', err.message);
-  });
+  }).finally(() => { _resolveMessagingReady(messaging); });   // CR-562: always settle
+} else {
+  _resolveMessagingReady(null);                                // CR-562: app init failed
 }
 
 /**
@@ -45,6 +52,7 @@ if (app) {
  * @returns {Promise<string|null>} FCM token or null
  */
 export const requestFCMToken = async () => {
+  await whenMessagingReady;                 // CR-562: wait out the reload init race
   if (!messaging) {
     console.warn('[Firebase] Messaging not initialized');
     return null;
@@ -119,8 +127,9 @@ export const requestFCMToken = async () => {
  * @param {Function} callback - (payload) => void
  * @returns {Function} unsubscribe
  */
-export const onForegroundMessage = (callback) => {
-  if (!messaging) return () => {};
+export const onForegroundMessage = async (callback) => {
+  await whenMessagingReady;                 // CR-562: attach only once messaging is ready
+  if (!messaging) return () => {};          // unsupported browser → no-op unsubscribe
   return onMessage(messaging, callback);
 };
 

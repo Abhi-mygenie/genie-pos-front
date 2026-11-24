@@ -1,3 +1,13 @@
+## 2026-11-24 — CR-562 Phase 1 (FCM reload-ring)
+| File | Change | Owner |
+|------|--------|-------|
+| `src/config/firebase.js` | **CR-562 E1** L18-48: add `export const whenMessagingReady` promise, resolved in the `isSupported().then().catch().finally()` chain (+ `else` branch on app-init fail). **E2** L55 `requestFCMToken` awaits it. **E3** L130-134 `onForegroundMessage` → async, awaits it then `onMessage`. Preserves BUG-560 unsupported-browser safety. | CR-562 Phase 1 IMPL 2026-11-24 |
+| `src/contexts/NotificationContext.jsx` | **CR-562 E4** L213-249: attach effect drops one-shot `initializedRef` gate (kept as marker), attaches foreground listener async via `onForegroundMessage(...).then(unsub)` with a `cancelled` teardown guard → reload re-attaches without double-subscribe. Logout reset (L276-282) unchanged. | CR-562 Phase 1 IMPL 2026-11-24 |
+| `src/__tests__/config/firebase.whenready.test.js` | NEW — whenMessagingReady settles + onForegroundMessage async unsub (2/2 PASS). | CR-562 Phase 1 IMPL 2026-11-24 |
+
+NOT touched: `firebase-messaging-sw.js` · `LoadingPage.jsx` · `LoginPage.jsx` · `soundManager.js` · `App.js` · `Sidebar.jsx` (later phases).
+
+
 <!-- CR-527 (capture phase) IMPL 2026-11-21 — FILE OWNERSHIP -->
 | File | Edits | Item |
 |---|---|---|

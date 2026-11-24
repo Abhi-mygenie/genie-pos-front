@@ -211,16 +211,21 @@ export const NotificationProvider = ({ children }) => {
   // INITIALIZE ON AUTH — preload sounds + listen for messages
   // =========================================================================
   useEffect(() => {
-    if (!isAuthenticated || initializedRef.current) return;
-    initializedRef.current = true;
+    if (!isAuthenticated) return undefined;   // CR-562: drop one-shot gate so reload re-attaches
+    initializedRef.current = true;            // CR-562: marker only (logout reset reads it)
 
     // Preload sounds
     soundManager.preload();
 
-    // Listen for foreground messages — pass full payload
-    foregroundUnsubRef.current = onForegroundMessage((payload) => {
+    let cancelled = false;                    // CR-562: async teardown guard (StrictMode-safe)
+    // CR-562: onForegroundMessage now awaits messaging readiness (reload race) — store the
+    // unsubscribe when it resolves; if the effect tore down first, immediately unsubscribe.
+    onForegroundMessage((payload) => {
       console.log('[Notification] Foreground message:', payload);
       processNotificationRef.current?.(payload);
+    }).then((unsub) => {
+      if (cancelled) { unsub?.(); return; }
+      foregroundUnsubRef.current = unsub;
     });
 
     // Listen for background messages forwarded by service worker
@@ -239,7 +244,8 @@ export const NotificationProvider = ({ children }) => {
     // BUG-661: moved to separate ungated effect below — removed from auth gate here.
 
     return () => {
-      if (foregroundUnsubRef.current) foregroundUnsubRef.current();
+      cancelled = true;                       // CR-562
+      if (foregroundUnsubRef.current) { foregroundUnsubRef.current(); foregroundUnsubRef.current = null; }
       navigator.serviceWorker?.removeEventListener('message', handleSWMessage);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
