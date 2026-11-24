@@ -2,12 +2,13 @@
 import { createContext, useContext, useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useAuth } from './AuthContext';
 import { onForegroundMessage, requestFCMToken } from '../config/firebase';
+import { registerDeviceToken } from '../api/services/deviceTokenService'; // BUG-749
 import soundManager from '../utils/soundManager';
+import fcmDiagLog from '../utils/fcmDiagLog';
 import { mapConfirmOrderTone, mapAggregatorOrderTone } from '../utils/toneMapper'; // BUG-600
 import { getRestaurantRef } from '../utils/restaurantRef';
-import { enqueueYtcFcm } from '../utils/ytcFcmPending'; // BUG-751
-import SoundUnlockBanner from '../components/notifications/SoundUnlockBanner'; // BUG-747
-import { registerDeviceToken } from '../api/services/deviceTokenService'; // BUG-749
+import { enqueueYtcFcm } from '../utils/ytcFcmPending';
+import SoundUnlockBanner from '../components/notifications/SoundUnlockBanner';
 
 const NotificationContext = createContext(null);
 
@@ -76,7 +77,6 @@ export const NotificationProvider = ({ children }) => {
     try { return localStorage.getItem('mygenie_notifications_enabled') !== 'false'; }
     catch { return true; }
   });
-  const initializedRef = useRef(false);
   const foregroundUnsubRef = useRef(null);
   const processNotificationRef = useRef(null);
   // BUG-034 (Apr-2026): dedupe guard — stores the last-processed notification key
@@ -90,11 +90,13 @@ export const NotificationProvider = ({ children }) => {
   // 2-second window: same key arriving within 2 s is treated as duplicate
   const DEDUP_WINDOW_MS = 2000;
 
-  // BUG-747: autoplay-unlock state powering the sidebar "Tap to enable" ringer + banner
+  // BUG-747: autoplay-unlock state powering the sidebar "Tap to enable" Ringer
   const [audioUnlocked, setAudioUnlocked] = useState(() => soundManager.getState().isUnlocked);
   const [audioBlockedAt, setAudioBlockedAt] = useState(0);
-  const audioUnlockedRef = useRef(audioUnlocked); audioUnlockedRef.current = audioUnlocked;
-  const soundEnabledRef = useRef(soundEnabled); soundEnabledRef.current = soundEnabled;
+  const audioUnlockedRef = useRef(audioUnlocked);
+  audioUnlockedRef.current = audioUnlocked;
+  const soundEnabledRef = useRef(soundEnabled);
+  soundEnabledRef.current = soundEnabled;
 
   // =========================================================================
   // PROCESS NOTIFICATION — play sound + show toast + add to list
@@ -111,6 +113,12 @@ export const NotificationProvider = ({ children }) => {
     const title = data.title || notif.title || 'Notification';
     const body = data.body || notif.body || '';
 
+    // Diagnostics: record every inbound notification (source + order) before any
+    // dedup/mute gating, so the panel can prove whether an order's payload arrived.
+    const diagSource = payload.__source || 'simulate';
+    const diagOrderId = String(data.orderid || data.order_id || data.orderId || '');
+    try { fcmDiagLog.add('received', { source: diagSource, order_id: diagOrderId, type: data.type || data.notification_type || '', title, body }); } catch { /* ignore */ }
+
     // BUG-034 (Apr-2026): deduplicate notifications that arrive via both the
     // foreground FCM listener and the service-worker forwarder within the same
     // short window. Use message_id (FCM canonical) → order_id → title+body
@@ -119,6 +127,7 @@ export const NotificationProvider = ({ children }) => {
     const now = Date.now();
     if (notifKey && notifKey === lastNotifKeyRef.current && (now - lastNotifTimeRef.current) < DEDUP_WINDOW_MS) {
       console.log('[Notification] Duplicate suppressed (key:', notifKey, ', elapsed:', now - lastNotifTimeRef.current, 'ms)');
+      try { fcmDiagLog.add('suppressed_dedup', { source: diagSource, order_id: diagOrderId, key: String(notifKey) }); } catch { /* ignore */ }
       return;
     }
     lastNotifKeyRef.current = notifKey;
@@ -174,43 +183,40 @@ export const NotificationProvider = ({ children }) => {
       }
     }
 
-    // BUG-751: after reload, FCM can arrive before/without the running-orders
-    // refresh — ask Dashboard to hydrate so ScanOrderPopOut opens. Real confirm
-    // payloads often stamp sound=forty_five_sec_buzzer (not confirm_order), so
-    // also match "confirm" in title/body.
-    const ytcOrderId = String(data.orderid || data.order_id || data.orderId || '');
+    // After reload, FCM can arrive before/without scan-new-order landing in
+    // OrderContext — ask Dashboard to hydrate so ScanOrderPopOut can open.
+    // Real payloads often stamp sound=forty_five_sec_buzzer (not confirm_order),
+    // so also match title/body "confirm".
     const looksLikeYtcConfirm =
-      isConfirmOrderNotification(data, resolvedSound) || /confirm/i.test(title) || /confirm/i.test(body);
-    if (ytcOrderId && looksLikeYtcConfirm) {
-      const queuedId = enqueueYtcFcm(ytcOrderId);
-      try { window.dispatchEvent(new CustomEvent('mygenie:ytc-fcm', { detail: { orderId: queuedId || ytcOrderId } })); }
-      catch { /* ignore */ }
+      isConfirmOrderNotification(data, resolvedSound) ||
+      /confirm/i.test(title) ||
+      /confirm/i.test(body);
+    if (diagOrderId && looksLikeYtcConfirm) {
+      const queuedId = enqueueYtcFcm(diagOrderId);
+      try {
+        window.dispatchEvent(new CustomEvent('mygenie:ytc-fcm', { detail: { orderId: queuedId || diagOrderId } }));
+      } catch { /* ignore */ }
     }
 
     console.log('[Notification] Extracted - title:', title, '| body:', body);
     console.log('[Notification] Sound - from payload:', soundKey, '| resolved:', resolvedSound);
 
-    // BUG-453 Fix B (OD-453-04): muted order → no sound, no banner/list entry.
-    // Placed AFTER BUG-034 dedup so dedup refs still update. Real FCM key is data.orderid (B0 evidence 2026-02).
-    const notifOrderId = String(data.orderid || data.order_id || data.orderId || '');
-    if (notifOrderId && soundManager.isOrderMuted(notifOrderId)) {
-      console.log('[Notification] BUG-453 muted order', notifOrderId, '— sound + toast suppressed');
-      return;
-    }
-
-    // BUG-747: play only after sidebar Ringer unlock (Tap to enable) and not Silent Mode.
-    // 'silent' always runs (it just stops current audio). Not-unlocked → show unlock
-    // banner; intentional Silent Mode → suppress with no banner.
+    // Play sound only after sidebar Ringer unlock (Tap to enable) and not Silent Mode.
+    // Mute/snooze is instance-only (stop current audio) — do not suppress later FCM by orderId.
     if (resolvedSound) {
       if (resolvedSound === 'silent') {
         soundManager.play('silent');
       } else if (!audioUnlockedRef.current) {
         console.log('[Notification] Sound suppressed — Tap to enable ringer first:', resolvedSound);
-        setAudioBlockedAt(Date.now());
+        setAudioBlockedAt(Date.now()); // show sidebar-directed unlock banner
+        try { fcmDiagLog.add('suppressed_needs_unlock', { source: diagSource, order_id: diagOrderId, sound: resolvedSound }); } catch { /* ignore */ }
       } else if (!soundEnabledRef.current) {
+        // Intentional Silent Mode — no floating banner (staff chose sidebar Silent).
         console.log('[Notification] Sound suppressed — Silent Mode:', resolvedSound);
+        try { fcmDiagLog.add('suppressed_sound_off', { source: diagSource, order_id: diagOrderId, sound: resolvedSound }); } catch { /* ignore */ }
       } else {
         console.log('[Notification] Playing sound:', resolvedSound);
+        try { fcmDiagLog.add('played', { source: diagSource, order_id: diagOrderId, sound: resolvedSound }); } catch { /* ignore */ }
         soundManager.play(resolvedSound);
       }
     }
@@ -219,7 +225,10 @@ export const NotificationProvider = ({ children }) => {
     if (resolvedSound === 'silent') return;
 
     // CR-440: banner kill switch — sound already played above; skip banner entry when disabled on this device
-    if (!notificationsEnabled) return;
+    if (!notificationsEnabled) {
+      try { fcmDiagLog.add('banner_suppressed_kill_switch', { source: diagSource, order_id: diagOrderId }); } catch { /* ignore */ }
+      return;
+    }
 
     const notification = {
       id: Date.now().toString(),
@@ -235,53 +244,83 @@ export const NotificationProvider = ({ children }) => {
     };
 
     setNotifications((prev) => [notification, ...prev].slice(0, 50));
+    try { fcmDiagLog.add('banner_shown', { source: diagSource, order_id: diagOrderId, type: notification.type }); } catch { /* ignore */ }
   }, [DEDUP_WINDOW_MS, notificationsEnabled]); // CR-440: notificationsEnabled read inside callback
 
   // Keep ref in sync
   processNotificationRef.current = processNotification;
 
   // =========================================================================
-  // INITIALIZE ON AUTH — preload sounds + listen for messages
+  // INITIALIZE ON AUTH — token register THEN foreground FCM listener
   // =========================================================================
+  // BUG-749 / reload fix: do NOT gate on initializedRef. StrictMode double-mount
+  // used to set initializedRef=true, cancel the first async onForegroundMessage,
+  // then skip remount — leaving no listener after reload. Fresh login worked
+  // because isAuthenticated flipped false→true after the StrictMode pass.
+  // Order matches login: getToken → POST /device-token → onForegroundMessage.
   useEffect(() => {
-    if (!isAuthenticated) return undefined;   // CR-562: drop one-shot gate so reload re-attaches
-    initializedRef.current = true;            // CR-562: marker only (logout reset reads it)
+    if (!isAuthenticated) return undefined;
 
-    // Preload sounds
     soundManager.preload();
 
-    let cancelled = false;                    // CR-562: async teardown guard (StrictMode-safe)
-    // CR-562: onForegroundMessage now awaits messaging readiness (reload race) — store the
-    // unsubscribe when it resolves; if the effect tore down first, immediately unsubscribe.
-    onForegroundMessage((payload) => {
-      console.log('[Notification] Foreground message:', payload);
-      processNotificationRef.current?.(payload);
-    }).then((unsub) => {
-      if (cancelled) { unsub?.(); return; }
-      foregroundUnsubRef.current = unsub;
-    });
+    let cancelled = false;
 
-    // Listen for background messages forwarded by service worker
+    (async () => {
+      // 1) Re-register live FCM token (BUG-749). Skip if permission not granted.
+      if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+        try {
+          const r = await requestFCMToken();
+          const token = r?.token || null;
+          if (!cancelled && token) {
+            const res = await registerDeviceToken(token);
+            if (!cancelled) {
+              console.log('[BUG-749] device-token registered', {
+                status: res?.status,
+                storedPreview: res?.fcm_token ? `${String(res.fcm_token).slice(0, 12)}…` : null,
+              });
+            }
+          }
+        } catch (err) {
+          if (!cancelled) console.warn('[BUG-749] device-token register failed:', err?.message || err);
+        }
+      }
+
+      if (cancelled) return;
+
+      // 2) Attach foreground listener after token path (CR-562 readiness still applies inside)
+      try {
+        const unsub = await onForegroundMessage((payload) => {
+          console.log('[Notification] Foreground message:', payload);
+          processNotificationRef.current?.({ ...payload, __source: 'foreground' });
+        });
+        if (cancelled) {
+          unsub?.();
+          return;
+        }
+        foregroundUnsubRef.current = unsub;
+        console.log('[Notification] Foreground FCM listener attached');
+      } catch (err) {
+        if (!cancelled) console.warn('[Notification] foreground subscribe failed:', err?.message);
+      }
+    })();
+
+    // Background messages forwarded by service worker
     const handleSWMessage = (event) => {
       if (event.data?.type === 'BACKGROUND_NOTIFICATION') {
         console.log('[Notification] SW forwarded message:', event.data.payload);
-        // Wrap SW data into same shape as foreground payload
-        processNotificationRef.current?.({ data: event.data.payload });
+        processNotificationRef.current?.({ data: event.data.payload, __source: 'sw' });
       }
     };
     navigator.serviceWorker?.addEventListener('message', handleSWMessage);
 
-    // BUG-621 OD-621-02: visibilitychange handler defined here so cleanup return() can reference it.
-    // Covers iOS Safari PWA where the SW may update while app is backgrounded/frozen —
-    // when user brings app to foreground, re-check reg.waiting.
-    // BUG-661: moved to separate ungated effect below — removed from auth gate here.
-
     return () => {
-      cancelled = true;                       // CR-562
-      if (foregroundUnsubRef.current) { foregroundUnsubRef.current(); foregroundUnsubRef.current = null; }
+      cancelled = true;
+      if (foregroundUnsubRef.current) {
+        foregroundUnsubRef.current();
+        foregroundUnsubRef.current = null;
+      }
       navigator.serviceWorker?.removeEventListener('message', handleSWMessage);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated]);
 
   // BUG-661: SW update detection — NOT gated by auth (OD-661); reload only after user-triggered skipWaiting (hadController guard)
@@ -308,45 +347,33 @@ export const NotificationProvider = ({ children }) => {
     };
   }, []);
 
-  // Reset on logout
-  useEffect(() => {
-    if (!isAuthenticated && initializedRef.current) {
-      initializedRef.current = false;
-      soundManager.stop(); soundManager.clearMutes(); // BUG-453: fresh mute state on next login
-      setNotifications([]);
-    }
-  }, [isAuthenticated]);
-
-  // BUG-749: register this device's FCM token with the backend on every
-  // authenticated boot/reload (incl. login-as-restaurant) so the backend can
-  // push to it. Granted-permission path only — no prompt on reload; the
-  // default/denied one-tap enable is Phase 4. Separate from the CR-562 attach
-  // effect so Phase 1 stays untouched. Idempotent backend, no client dedupe (D5).
-  useEffect(() => {
-    if (!isAuthenticated) return undefined;
-    if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return undefined;
-    let cancelled = false;
-    requestFCMToken().then((res) => {
-      const token = res?.token || (typeof res === 'string' ? res : null); // {error,token} new shape / legacy string
-      if (cancelled || !token) return;
-      registerDeviceToken(token); // fire-and-forget
-    });
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthenticated]);
-
-  // BUG-747: unlock autoplay (sidebar "Tap to enable" / banner only — not random clicks)
+  // BUG-747: unlock autoplay (muted silent clip). Only the sidebar Ringer
+  // "Tap to enable" control should call this — not Accept / random clicks.
   const unlockAudioNow = useCallback(async () => {
     const ok = await soundManager.unlock();
     if (ok) { setAudioUnlocked(true); setAudioBlockedAt(0); }
     return ok;
   }, []);
-  // Lock on boot if autoplay not unlocked; re-lock when a real play is blocked.
+
+  // Sidebar Ringer attention state: lock on boot when autoplay is not unlocked;
+  // re-lock when a play is blocked. Do NOT auto-unlock on window gestures —
+  // Accept/any click used to flip the icon green while sound was still "off".
   useEffect(() => {
-    if (!soundManager.getState().isUnlocked) { setAudioUnlocked(false); setAudioBlockedAt(Date.now()); }
+    if (!soundManager.getState().isUnlocked) {
+      setAudioUnlocked(false);
+      setAudioBlockedAt(Date.now());
+    }
     soundManager.setBlockedHandler(() => { setAudioUnlocked(false); setAudioBlockedAt(Date.now()); });
     return () => { soundManager.setBlockedHandler(null); };
   }, []);
+
+  // Reset on logout
+  useEffect(() => {
+    if (!isAuthenticated) {
+      soundManager.stop(); soundManager.clearMutes(); // BUG-453: fresh mute state on next login
+      setNotifications([]);
+    }
+  }, [isAuthenticated]);
 
   // Sync sound enabled state
   useEffect(() => {

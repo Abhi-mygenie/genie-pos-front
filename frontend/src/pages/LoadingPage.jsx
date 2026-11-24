@@ -4,10 +4,12 @@ import { Check, Loader2, AlertCircle } from "lucide-react";
 import { COLORS, GENIE_LOGO_URL } from "../constants";
 import { useToast } from "../hooks/use-toast";
 import { API_LOADING_ORDER, LOADING_STATES, PAGINATION } from "../api/constants"; // BUG-451
-import { peekYtcFcmPending } from "../utils/ytcFcmPending"; // BUG-751
 import { useAuth, useRestaurant, useMenu, useTables, useSettings, useOrders, useStations } from "../contexts";
 import * as profileService from "../api/services/profileService";
 import { setCrmRestaurantId } from "../api/crmAxios";
+import { requestFCMToken } from "../config/firebase"; // CR-562
+import { isUnconfirmedScanOrder, hasUnconfirmedWebEditItems } from "../components/dashboard/ScanOrderPopOut";
+import { peekYtcFcmPending } from "../utils/ytcFcmPending";
 import * as categoryService from "../api/services/categoryService";
 import * as productService from "../api/services/productService";
 import { getPopularFoods } from '../api/services/menuManagementService'; // BUG-340
@@ -34,7 +36,7 @@ const LoadingPage = () => {
   const { setCategories, setProducts, setPopularProducts } = useMenu(); // BUG-340: +setPopularProducts
   const { setTables } = useTables();
   const { setCancellationReasons } = useSettings();
-  const { setOrders, orders: contextOrders } = useOrders(); // BUG-751
+  const { setOrders, orders: contextOrders } = useOrders();
   const { 
     setAvailableStations, 
     initializeConfig, 
@@ -363,8 +365,26 @@ const LoadingPage = () => {
     const t0 = Date.now();
     updateStatus('profile', LOADING_STATES.LOADING, null, 0, 1, { startedAt: t0 });
     try {
-      data.profile = await profileService.getProfile();
+      // CR-562: optional profile ?fcm_token= for drift diagnostics only (OD-749-06).
+      // Authoritative boot register is BUG-749 POST /device-token in NotificationContext
+      // (not time-boxed). Keep 3s race so Tier-1 boot is never blocked.
+      let currentFcmToken = null;
+      if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+        try {
+          const r = await Promise.race([
+            requestFCMToken(),
+            new Promise((res) => setTimeout(() => res(null), 3000)),
+          ]);
+          currentFcmToken = r?.token || null;
+        } catch { /* non-blocking — proceed without the param */ }
+      }
+      data.profile = await profileService.getProfile(currentFcmToken);
       if (ctrl.aborted) return;
+      // CR-562: drift diagnostics — did the backend hold a stale token?
+      const storedFcmToken = data.profile.fcmToken;
+      if (currentFcmToken && storedFcmToken && currentFcmToken !== storedFcmToken) {
+        console.warn('[CR-562] FCM token drift — backend had a stale token; refreshed on this profile GET');
+      }
       
       // Debug: Log permissions for analysis
       console.log('[LoadingPage] User Profile:', {
@@ -623,16 +643,40 @@ const LoadingPage = () => {
     // BUG-599: Combine POS + aggregator orders before dispatching to context.
     // Both load in Tier 2 parallel; merging here avoids the race where
     // setOrders(POS) would wipe aggregator orders added via addOrder.
+    // Also preserve optimistic YTC/web-edit orders added by YtcFcmHydrator during
+    // /loading (FCM can arrive before running-orders returns).
     if (data.runningOrders) {
       const combined = [...data.runningOrders, ...(data.aggregatorOrders || [])];
-      // BUG-751: preserve optimistic YTC/web-edit orders added by YtcFcmHydrator during
-      // /loading (FCM can arrive before running-orders returns).
       const combinedIds = new Set(combined.map((o) => Number(o.orderId)));
-      const pendingYtc = new Set(peekYtcFcmPending());
       const preserveYtc = (Array.isArray(contextOrders) ? contextOrders : []).filter(
-        (o) => o && pendingYtc.has(Number(o.orderId)) && !combinedIds.has(Number(o.orderId))
+        (o) =>
+          o &&
+          !combinedIds.has(Number(o.orderId)) &&
+          (isUnconfirmedScanOrder(o) || hasUnconfirmedWebEditItems(o))
       );
-      setOrders(preserveYtc.length ? [...combined, ...preserveYtc] : combined);
+      // Also synthesize placeholders for any FCM ids still pending (covers stale
+      // contextOrders closure during long Tier-2 await).
+      const pendingPlaceholders = peekYtcFcmPending()
+        .filter((id) => !combinedIds.has(id) && !preserveYtc.some((o) => Number(o.orderId) === id))
+        .map((orderId) => ({
+          orderId,
+          fOrderStatus: 7,
+          orderFrom: 'web',
+          isWebOrder: true,
+          status: 'pending',
+          items: [],
+          amount: 0,
+          tableId: 0,
+          createdAt: new Date().toISOString(),
+        }));
+      const merged = [...combined, ...preserveYtc, ...pendingPlaceholders];
+      setOrders(merged);
+      // Re-signal pending so hydrator re-runs enrich fetch after boot setOrders
+      peekYtcFcmPending().forEach((id) => {
+        try {
+          window.dispatchEvent(new CustomEvent('mygenie:ytc-fcm', { detail: { orderId: id } }));
+        } catch { /* ignore */ }
+      });
     }
 
     loadedDataRef.current = data;

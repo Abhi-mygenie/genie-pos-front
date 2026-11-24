@@ -1,4 +1,4 @@
-// BUG-751 — Module-level queue of YTC/confirm FCM order IDs.
+// Module-level queue of YTC/confirm FCM order IDs.
 // Survives /loading: NotificationContext can enqueue before Dashboard mounts;
 // YtcFcmHydrator processes without clearing until each id hydrates successfully
 // (so LoadingPage setOrders cannot lose in-flight optimistics).

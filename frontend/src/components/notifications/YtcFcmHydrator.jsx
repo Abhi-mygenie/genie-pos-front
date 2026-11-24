@@ -1,6 +1,6 @@
-// BUG-751 — Always-mounted under OrderProvider: processes the YTC FCM pending queue
-// during /loading and after Dashboard mount. Optimistic minimal web YTC → instant
-// ScanOrderPopOut, then fetchSingleOrderForSocket enriches items/table/amount.
+// Always-mounted under OrderProvider: processes YTC FCM pending queue during /loading
+// and after Dashboard mount. Optimistic minimal web YTC → instant ScanOrderPopOut,
+// then fetchSingleOrderForSocket enriches items/table/amount.
 import { useEffect, useRef } from 'react';
 import { useOrders } from '../../contexts';
 import { fetchSingleOrderForSocket } from '../../api/services/orderService';
@@ -31,6 +31,8 @@ export default function YtcFcmHydrator() {
 
       const existing = getOrderById(orderId);
       if (existing && (isUnconfirmedScanOrder(existing) || hasUnconfirmedWebEditItems(existing))) {
+        // Already popup-eligible with real data (has items) or minimal — if full
+        // enough (items length > 0 or table), clear pending; if minimal empty, still fetch.
         if ((existing.items && existing.items.length > 0) || existing.tableId) {
           removeYtcFcm(orderId);
           return;

@@ -7,10 +7,10 @@ export const API_ENDPOINTS = {
   // Auth
   LOGIN: '/api/v1/auth/vendoremployee/login',
   LOGOUT: '/api/v2/vendoremployee/employee-logout',     // CR-124: server-side token invalidation + FCM deregister
-  DEVICE_TOKEN: '/api/v1/vendoremployee/device-token',  // BUG-749: boot FCM token register (bearer, {fcm_token})
   
   // Profile
   PROFILE: '/api/v1/vendoremployee/profile',                                   // Owner override 2026-05-08: switched from v2 vendor-profile/profile → v1 profile (different path; new schema places `print_agent` at TOP LEVEL of response, not in restaurants[0])
+  DEVICE_TOKEN: '/api/v1/vendoremployee/device-token', // BUG-749: dedicated FCM register (boot/reload)
   
   // Menu
   CATEGORIES: '/api/v1/vendoremployee/get-categories',

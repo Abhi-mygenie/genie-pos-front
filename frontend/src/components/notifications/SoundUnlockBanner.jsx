@@ -1,12 +1,15 @@
 // SoundUnlockBanner — shown when an order alert arrives while ringer is locked
 // (Tap to enable / autoplay blocked). Intentional Silent Mode does NOT show this.
 // Tapping unlocks audio so subsequent rings can play (Silent stays until sidebar).
-// BUG-747
 import { VolumeX } from 'lucide-react';
 import { useNotifications } from '../../contexts/NotificationContext';
 
 export default function SoundUnlockBanner() {
-  const { audioUnlocked, audioBlockedAt, unlockAudioNow } = useNotifications();
+  const {
+    audioUnlocked,
+    audioBlockedAt,
+    unlockAudioNow,
+  } = useNotifications();
 
   if (!audioBlockedAt || audioUnlocked) return null;
 

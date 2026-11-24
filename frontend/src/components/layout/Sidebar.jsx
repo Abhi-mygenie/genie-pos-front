@@ -811,17 +811,20 @@ const Sidebar = ({
         className="p-4 flex-shrink-0"
         style={{ borderTop: `1px solid ${COLORS.borderGray}` }}
       >
-        {/* BUG-747: Ringer tri-state — Ringer On / Silent Mode / Tap to enable (autoplay locked) */}
+        {/* Ringer / Silent / Tap-to-enable (autoplay unlock) — persistent sidebar control */}
         <button
           type="button"
           data-testid="sidebar-silent-toggle"
           onClick={() => {
-            if (soundEnabled && !audioUnlocked) { unlockAudioNow(); return; }
+            if (soundEnabled && !audioUnlocked) {
+              unlockAudioNow();
+              return;
+            }
             setSoundEnabled(!soundEnabled);
           }}
           className={`w-full flex items-center gap-3 px-2 py-2.5 mb-3 rounded-lg transition-colors ${
-            isExpanded ? "justify-start" : "justify-center"
-          } ${soundEnabled && !audioUnlocked ? "animate-pulse" : ""}`}
+            isExpanded ? 'justify-start' : 'justify-center'
+          } ${soundEnabled && !audioUnlocked ? 'animate-pulse' : ''}`}
           style={{
             backgroundColor: !soundEnabled
               ? `${COLORS.grayText}15`
@@ -834,7 +837,11 @@ const Sidebar = ({
                 ? COLORS.errorText
                 : COLORS.primaryGreen,
           }}
-          title={!isExpanded ? (!soundEnabled ? "Silent Mode" : !audioUnlocked ? "Tap to enable" : "Ringer On") : undefined}
+          title={
+            !isExpanded
+              ? (!soundEnabled ? 'Silent Mode' : !audioUnlocked ? 'Tap to enable' : 'Ringer On')
+              : undefined
+          }
         >
           {!soundEnabled || !audioUnlocked ? (
             <BellOff className="w-5 h-5 flex-shrink-0" />
@@ -843,7 +850,7 @@ const Sidebar = ({
           )}
           {isExpanded && (
             <span className="text-sm font-medium">
-              {!soundEnabled ? "Silent Mode" : !audioUnlocked ? "Tap to enable" : "Ringer On"}
+              {!soundEnabled ? 'Silent Mode' : !audioUnlocked ? 'Tap to enable' : 'Ringer On'}
             </span>
           )}
         </button>

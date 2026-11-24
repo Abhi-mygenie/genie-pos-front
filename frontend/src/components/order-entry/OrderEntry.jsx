@@ -16,6 +16,7 @@ import { toAPI as tableToAPI } from "../../api/transforms/tableTransform";
 import { toAPI as orderToAPI, customItemFromAPI, fromAPI as orderFromAPI, calculateSelectedVariantsPrice } from "../../api/transforms/orderTransform";
 import { applyGrandTotalRoundOff } from '../../utils/roundOffUtils'; // BUG-684
 import { fetchSingleOrderForSocket, printOrder, updateFoodItemPrice } from "../../api/services/orderService"; // CR-561
+import soundManager from "../../utils/soundManager";
 // CR-008 #4 Phase A / Bucket D1 (May-2026): post-Collect-Bill stay-vs-redirect
 // preference. Read site for this flag is the success branch of
 // onPaymentComplete (Scenario 1 — collect bill on existing order, see line
@@ -64,7 +65,7 @@ const OrderEntry = ({ table, onClose, orderData, orderType = "delivery", onOrder
   const { categories, products, popularProducts, activeMenuProducts, activeMenuType, availableMenuTypes } = useMenu(); // BUG-340: +popularProducts from boot // CR-376: +activeMenuProducts, +activeMenuType // BUG-462: +availableMenuTypes
   const { orders, addOrder, refreshOrders, removeOrder, waitForOrderRemoval, waitForOrderEngaged, waitForOrderReady, getOrderByTableId, getOrderById } = useOrders();
   const { getItemCancellationReasons, getOrderCancellationReasons } = useSettings();
-  const { restaurant, features, cancellation, settings, printerAgents } = useRestaurant();
+  const { restaurant, features, cancellation, settings, printerAgents, defaultOrderStatus } = useRestaurant();
   const { user, hasPermission, permissions } = useAuth();
   const { updateTableStatus, setTableEngaged, waitForTableEngaged, isTableEngaged } = useTables();
   const { toast } = useToast();
@@ -1385,6 +1386,18 @@ const OrderEntry = ({ table, onClose, orderData, orderType = "delivery", onOrder
         await engagePromise;
         if (apiFailed) return; // API failed — stay on screen, toast shown
         console.log('[UpdateOrder] Socket engaged — redirecting to dashboard');
+        // Not-Confirm (food_status=7) promote + KOT is additive on BE update-place-order.
+        // Stop banner buzzer only when Not-Confirm lines are present (same as Accept path).
+        {
+          const snap = getOrderById(Number(placedOrderId)) || orderData;
+          const items = Array.isArray(snap?.items) ? snap.items : [];
+          const hasNotConfirm = items.some(
+            (it) => it?.isNotConfirmed && it?.status !== 'cancelled'
+          );
+          if (hasNotConfirm) {
+            try { soundManager.stop(); } catch { /* ignore */ }
+          }
+        }
       } else {
         // BUG-210: Pre-flight check — prevent placing on already-occupied/engaged table
         const preCheckTableId = Number(table?.tableId);

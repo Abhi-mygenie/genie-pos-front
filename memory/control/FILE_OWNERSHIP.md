@@ -1,3 +1,10 @@
+## 2026-11-24 — AUTHORITATIVE SYNC from notification-fix@254d9b6 (FE FCM/YTC/sound pack)
+Replaced verbatim from branch tip (supersedes earlier hand-ported Phase-3 edits):
+`utils/ytcFcmPending.js`, `components/notifications/YtcFcmHydrator.jsx`, `api/services/deviceTokenService.js`, `api/services/__tests__/deviceTokenService.bug749.test.js` (NEW), `api/constants.js`, `contexts/NotificationContext.jsx`, `contexts/AppProviders.jsx`, `components/notifications/SoundUnlockBanner.jsx`, `components/layout/Sidebar.jsx`, `pages/LoadingPage.jsx`, `pages/DashboardPage.jsx`, `utils/soundManager.js` (minus the duplicate `setBlockedHandler`), `components/dashboard/ScanOrderPopOut.jsx`, `components/order-entry/OrderEntry.jsx`.
+Added dep: `utils/fcmDiagLog.js` (NEW, branch) — required by the picked files. Removed scaffolds: `__tests__/api/deviceTokenService.test.js`, `__tests__/utils/soundManager.unlock.test.js`.
+Owner: BUG-747/749/751/752 + BUG-750 SYNC 2026-11-24.
+
+
 ## 2026-11-24 — FCM reload-ring Phase-3 pack (BUG-747 + BUG-751 + BUG-752)
 | File | Change | Owner |
 |------|--------|-------|

@@ -1,6 +1,7 @@
 // SoundManager - Manages notification audio playback
 // Plays chimes and ringers from /public/sounds/
 // Silent notification stops any currently playing sound
+import fcmDiagLog from './fcmDiagLog';
 
 const SOUND_FILES = {
   new_order: '/sounds/new_order.wav',
@@ -24,9 +25,10 @@ class SoundManager {
     this.currentAudio = null;
     this.audioCache = {};
     this.isEnabled = true;
-    this.isUnlocked = false;      // BUG-747: has autoplay been unlocked by a user gesture?
-    this.onBlocked = null;        // BUG-747: observer invoked when a ring is blocked by autoplay policy
-    this.mutedOrders = new Set(); // BUG-453 Fix B: per-order manual mute (OD-453-03)
+    this.isUnlocked = false;      // diagnostics: has audio playback been unlocked by a user gesture?
+    this.lastResults = {};        // diagnostics: { [soundKey]: { ok, error, ts } }
+    this.mutedOrders = new Set(); // BUG-453 helpers retained; notification path no longer suppresses by orderId
+    this.onBlocked = null;        // BUG-747: optional observer invoked when a ring is blocked by autoplay policy
   }
 
   /**
@@ -81,12 +83,53 @@ class SoundManager {
 
     this.currentAudio = audio;
     audio.play()
-      .then(() => { this.isUnlocked = true; }) // BUG-747: a successful play means autoplay is unlocked
+      .then(() => { this.isUnlocked = true; this._record(soundKey, true, null); })
       .catch((err) => {
         console.warn('[SoundManager] Play blocked:', err.message);
+        this._record(soundKey, false, err.message);
         if (this.currentAudio === audio) this.currentAudio = null; // BUG-453 Fix A
         try { this.onBlocked?.(soundKey, err.message); } catch { /* ignore */ } // BUG-747
       });
+  }
+
+  // ── Diagnostics helpers (additive; do not affect normal playback) ──────────
+  _record(soundKey, ok, error) {
+    this.lastResults[soundKey] = { ok, error: error || null, ts: Date.now() };
+    try { fcmDiagLog.add(ok ? 'sound_ok' : 'sound_blocked', { sound: soundKey, error: error || null }); }
+    catch { /* ignore */ }
+  }
+
+  // Play a sound explicitly for testing — bypasses the silent-mode gate and
+  // resolves with the real browser outcome so the panel can show ✓ / blocked.
+  playTest(soundKey) {
+    const path = SOUND_FILES[soundKey];
+    if (!path) return Promise.resolve({ ok: false, error: 'unknown sound' });
+    this.stop();
+    const audio = this.audioCache[soundKey] ? this.audioCache[soundKey].cloneNode() : new Audio(path);
+    this.currentAudio = audio;
+    return audio.play()
+      .then(() => { this.isUnlocked = true; this._record(soundKey, true, null); return { ok: true, error: null }; })
+      .catch((err) => {
+        this._record(soundKey, false, err.message);
+        if (this.currentAudio === audio) this.currentAudio = null;
+        return { ok: false, error: err.message };
+      });
+  }
+
+  // Unlock autoplay with a user gesture (plays a muted silent clip).
+  unlock() {
+    const audio = this.audioCache.silent ? this.audioCache.silent.cloneNode() : new Audio(SOUND_FILES.silent);
+    audio.muted = true;
+    return audio.play()
+      .then(() => { this.isUnlocked = true; audio.pause(); try { fcmDiagLog.add('unlock', { ok: true }); } catch { /* ignore */ } return true; })
+      .catch((err) => { try { fcmDiagLog.add('unlock', { ok: false, error: err.message }); } catch { /* ignore */ } return false; });
+  }
+
+  // BUG-747: React subscribes here to show the "tap to enable" banner when a ring is blocked.
+  setBlockedHandler(fn) { this.onBlocked = fn; }
+
+  getState() {
+    return { isEnabled: this.isEnabled, isUnlocked: this.isUnlocked, lastResults: { ...this.lastResults } };
   }
 
   /**
@@ -100,22 +143,8 @@ class SoundManager {
     }
   }
 
-  // BUG-747: unlock autoplay with a user gesture (plays a muted silent clip).
-  unlock() {
-    const audio = this.audioCache.silent ? this.audioCache.silent.cloneNode() : new Audio(SOUND_FILES.silent);
-    audio.muted = true;
-    return audio.play()
-      .then(() => { this.isUnlocked = true; audio.pause(); return true; })
-      .catch(() => false);
-  }
-
-  // BUG-747: React subscribes here to show the "Tap to enable" banner when a ring is blocked.
-  setBlockedHandler(fn) { this.onBlocked = fn; }
-
-  // BUG-747: lightweight state snapshot for the sidebar ringer / banner.
-  getState() { return { isEnabled: this.isEnabled, isUnlocked: this.isUnlocked }; }
-
-  // BUG-453 Fix B — per-order mute registry (OD-453-03/04). Keys are String(orderId).
+  // BUG-453 Fix B — per-order mute registry helpers (Set). Notification pipeline no longer
+  // gates on isOrderMuted; Mute/snooze only calls stop() so later FCM (edits) can ring.
   muteOrder(id) { this.mutedOrders.add(String(id)); }
   unmuteOrder(id) { this.mutedOrders.delete(String(id)); }
   toggleOrderMute(id) {

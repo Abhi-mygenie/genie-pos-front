@@ -267,15 +267,19 @@ const ScanOrderPopOut = ({
     }
   }, [queue.length, currentIndex]);
 
-  // BUG-752: stop long confirm buzzers (e.g. forty_five_sec_buzzer) on staff action.
+  // Stop long confirm buzzers (e.g. forty_five_sec_buzzer) on staff action.
   const stopBuzzer = useCallback(() => {
-    try { soundManager.stop(); }
-    catch (e) { console.warn('[ScanOrderPopOut] soundManager.stop() failed:', e?.message); }
+    try {
+      soundManager.stop();
+    } catch (e) {
+      console.warn('[ScanOrderPopOut] soundManager.stop() failed:', e?.message);
+    }
   }, []);
 
   const handleSnoozeClick = useCallback(
     (orderId) => {
       // Stop the in-progress chime (CR SNOOZE_SOUND_STOP_AND_DURATION, Jan-2026).
+      // soundManager.stop() is idempotent and a no-op when nothing is playing.
       stopBuzzer();
       // Reuse existing dashboard snooze handler (dims card on dashboard).
       if (typeof onToggleSnooze === 'function') {
@@ -287,19 +291,25 @@ const ScanOrderPopOut = ({
   );
 
   const handleCancelItemClick = useCallback(
-    (order, item) => { stopBuzzer(); if (typeof onCancelItem === 'function') onCancelItem(order, item); },
+    (order, item) => {
+      stopBuzzer();
+      if (typeof onCancelItem === 'function') onCancelItem(order, item);
+    },
     [onCancelItem, stopBuzzer]
   );
 
   const handleRejectNewItemsClick = useCallback(
-    (order) => { stopBuzzer(); if (typeof onRejectNewItems === 'function') onRejectNewItems(order); },
+    (order) => {
+      stopBuzzer();
+      if (typeof onRejectNewItems === 'function') onRejectNewItems(order);
+    },
     [onRejectNewItems, stopBuzzer]
   );
 
   const handleAcceptClick = useCallback(
     async (order) => {
       if (!order || isAccepting) return;
-      stopBuzzer(); // BUG-752
+      stopBuzzer();
       setIsAccepting(true);
       try {
         const entry = buildTableEntryFromOrder(order);
@@ -325,7 +335,7 @@ const ScanOrderPopOut = ({
   const handleRejectClick = useCallback(
     (order) => {
       if (!order) return;
-      stopBuzzer(); // BUG-752
+      stopBuzzer();
       // handleCancelOrderFromCard accepts a raw order object — see
       // DashboardPage.jsx:1427. Pass the order through unchanged.
       if (typeof onReject === 'function') onReject(order);
@@ -680,7 +690,7 @@ const ScanOrderPopOut = ({
                       isSelected={selectedItemIds.has(it.id)}
                       onToggleKot={toggleKotItem}
                       showCancel={!!onCancelItem}
-                      onCancel={(item) => onCancelItem(activeOrder, item)}
+                      onCancel={(item) => handleCancelItemClick(activeOrder, item)}
                       onPriceChange={handlePriceChange}
                     />
                   ))}

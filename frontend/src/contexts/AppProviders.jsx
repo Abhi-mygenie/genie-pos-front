@@ -7,11 +7,11 @@ import { SettingsProvider } from './SettingsContext';
 import { OrderProvider } from './OrderContext';
 import { StationProvider } from './StationContext';
 import { NotificationProvider } from './NotificationContext';
-import YtcFcmHydrator from '../components/notifications/YtcFcmHydrator'; // BUG-751
+import YtcFcmHydrator from '../components/notifications/YtcFcmHydrator';
 
 // Combined App Providers - Wraps all context providers
 // Order matters: Auth → Socket → Notification → Rest
-// BUG-751: YtcFcmHydrator must sit under OrderProvider so YTC FCM during /loading is not lost.
+// YtcFcmHydrator must sit under OrderProvider so YTC FCM during /loading is not lost.
 const AppProviders = ({ children }) => {
   return (
     <AuthProvider>
