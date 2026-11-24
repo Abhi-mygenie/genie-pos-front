@@ -1,3 +1,20 @@
+## 2026-11-24 — FCM reload-ring Phase-3 pack (BUG-747 + BUG-751 + BUG-752)
+| File | Change | Owner |
+|------|--------|-------|
+| `src/utils/soundManager.js` | **BUG-747** +`isUnlocked`/`onBlocked` (ctor); play success→`isUnlocked=true`, blocked→`onBlocked(soundKey,err)` in `.catch`; +`unlock()` (muted silent clip), +`setBlockedHandler()` (SINGLE), +`getState()`. | BUG-747 Phase3 IMPL 2026-11-24 |
+| `src/contexts/NotificationContext.jsx` | **BUG-747** `audioUnlocked`/`audioBlockedAt` state+refs, 3-state play gate (silent/locked→banner/Silent/play), `unlockAudioNow` + boot/blocked effect, value+deps, mount `<SoundUnlockBanner/>`. **BUG-751** `enqueueYtcFcm` + `mygenie:ytc-fcm` dispatch on confirm/YTC FCM. (CR-562 attach + BUG-749 register + BUG-453 mute untouched.) | BUG-747/751 Phase3 IMPL 2026-11-24 |
+| `src/components/notifications/SoundUnlockBanner.jsx` | **NEW** BUG-747 — red unlock banner, shows only when `audioBlockedAt && !audioUnlocked`; tap→`unlockAudioNow()`. | BUG-747 Phase3 IMPL 2026-11-24 |
+| `src/components/layout/Sidebar.jsx` | **BUG-747** ringer tri-state On/Silent/Tap-to-enable (+`audioUnlocked`/`unlockAudioNow` from context; pulse+error colors when locked). | BUG-747 Phase3 IMPL 2026-11-24 |
+| `src/utils/ytcFcmPending.js` | **NEW** BUG-751 — module-level pending YTC order-id queue (enqueue/remove/peek). | BUG-751 Phase3 IMPL 2026-11-24 |
+| `src/components/notifications/YtcFcmHydrator.jsx` | **NEW** BUG-751 — mounted under OrderProvider; optimistic minimal YTC order then `fetchSingleOrderForSocket` enrich; listens `mygenie:ytc-fcm`. | BUG-751 Phase3 IMPL 2026-11-24 |
+| `src/contexts/AppProviders.jsx` | **BUG-751** mount `<YtcFcmHydrator/>` as first child inside `OrderProvider`. | BUG-751 Phase3 IMPL 2026-11-24 |
+| `src/pages/LoadingPage.jsx` | **BUG-751** read `orders: contextOrders`; preserve pending optimistic YTC orders on `setOrders(combined)`. | BUG-751 Phase3 IMPL 2026-11-24 |
+| `src/components/dashboard/ScanOrderPopOut.jsx` | **BUG-752** `stopBuzzer()` helper; wired into `handleAcceptClick`/`handleRejectClick`/new `handleCancelItemClick`/`handleRejectNewItemsClick`; onCancel+reject-edit wiring. Stop-only (no play/setEnabled). | BUG-752 Phase3 IMPL 2026-11-24 |
+| `src/__tests__/utils/soundManager.unlock.test.js` | NEW — getState default false; unlock() flips true; setBlockedHandler fires on blocked play (3/3 PASS). | BUG-747 Phase3 IMPL 2026-11-24 |
+
+NOT touched: `config/firebase.js` · CR-562 attach effect · BUG-749 register effect · BUG-453 mute gate · `OrderEntry.jsx` (CR-552 confirm-after-update = backend-handled, excluded) · `fcmDiagLog` (excluded).
+
+
 ## 2026-11-24 — BUG-749 Phase 2 (FCM device-token boot register)
 | File | Change | Owner |
 |------|--------|-------|

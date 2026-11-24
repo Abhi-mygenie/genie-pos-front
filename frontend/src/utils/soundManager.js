@@ -24,6 +24,8 @@ class SoundManager {
     this.currentAudio = null;
     this.audioCache = {};
     this.isEnabled = true;
+    this.isUnlocked = false;      // BUG-747: has autoplay been unlocked by a user gesture?
+    this.onBlocked = null;        // BUG-747: observer invoked when a ring is blocked by autoplay policy
     this.mutedOrders = new Set(); // BUG-453 Fix B: per-order manual mute (OD-453-03)
   }
 
@@ -78,10 +80,13 @@ class SoundManager {
     });
 
     this.currentAudio = audio;
-    audio.play().catch((err) => {
-      console.warn('[SoundManager] Play blocked:', err.message);
-      if (this.currentAudio === audio) this.currentAudio = null; // BUG-453 Fix A
-    });
+    audio.play()
+      .then(() => { this.isUnlocked = true; }) // BUG-747: a successful play means autoplay is unlocked
+      .catch((err) => {
+        console.warn('[SoundManager] Play blocked:', err.message);
+        if (this.currentAudio === audio) this.currentAudio = null; // BUG-453 Fix A
+        try { this.onBlocked?.(soundKey, err.message); } catch { /* ignore */ } // BUG-747
+      });
   }
 
   /**
@@ -94,6 +99,21 @@ class SoundManager {
       this.currentAudio = null;
     }
   }
+
+  // BUG-747: unlock autoplay with a user gesture (plays a muted silent clip).
+  unlock() {
+    const audio = this.audioCache.silent ? this.audioCache.silent.cloneNode() : new Audio(SOUND_FILES.silent);
+    audio.muted = true;
+    return audio.play()
+      .then(() => { this.isUnlocked = true; audio.pause(); return true; })
+      .catch(() => false);
+  }
+
+  // BUG-747: React subscribes here to show the "Tap to enable" banner when a ring is blocked.
+  setBlockedHandler(fn) { this.onBlocked = fn; }
+
+  // BUG-747: lightweight state snapshot for the sidebar ringer / banner.
+  getState() { return { isEnabled: this.isEnabled, isUnlocked: this.isUnlocked }; }
 
   // BUG-453 Fix B — per-order mute registry (OD-453-03/04). Keys are String(orderId).
   muteOrder(id) { this.mutedOrders.add(String(id)); }

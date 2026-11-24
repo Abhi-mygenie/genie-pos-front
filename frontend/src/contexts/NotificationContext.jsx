@@ -5,6 +5,8 @@ import { onForegroundMessage, requestFCMToken } from '../config/firebase';
 import soundManager from '../utils/soundManager';
 import { mapConfirmOrderTone, mapAggregatorOrderTone } from '../utils/toneMapper'; // BUG-600
 import { getRestaurantRef } from '../utils/restaurantRef';
+import { enqueueYtcFcm } from '../utils/ytcFcmPending'; // BUG-751
+import SoundUnlockBanner from '../components/notifications/SoundUnlockBanner'; // BUG-747
 import { registerDeviceToken } from '../api/services/deviceTokenService'; // BUG-749
 
 const NotificationContext = createContext(null);
@@ -88,6 +90,12 @@ export const NotificationProvider = ({ children }) => {
   // 2-second window: same key arriving within 2 s is treated as duplicate
   const DEDUP_WINDOW_MS = 2000;
 
+  // BUG-747: autoplay-unlock state powering the sidebar "Tap to enable" ringer + banner
+  const [audioUnlocked, setAudioUnlocked] = useState(() => soundManager.getState().isUnlocked);
+  const [audioBlockedAt, setAudioBlockedAt] = useState(0);
+  const audioUnlockedRef = useRef(audioUnlocked); audioUnlockedRef.current = audioUnlocked;
+  const soundEnabledRef = useRef(soundEnabled); soundEnabledRef.current = soundEnabled;
+
   // =========================================================================
   // PROCESS NOTIFICATION — play sound + show toast + add to list
   // =========================================================================
@@ -166,6 +174,19 @@ export const NotificationProvider = ({ children }) => {
       }
     }
 
+    // BUG-751: after reload, FCM can arrive before/without the running-orders
+    // refresh — ask Dashboard to hydrate so ScanOrderPopOut opens. Real confirm
+    // payloads often stamp sound=forty_five_sec_buzzer (not confirm_order), so
+    // also match "confirm" in title/body.
+    const ytcOrderId = String(data.orderid || data.order_id || data.orderId || '');
+    const looksLikeYtcConfirm =
+      isConfirmOrderNotification(data, resolvedSound) || /confirm/i.test(title) || /confirm/i.test(body);
+    if (ytcOrderId && looksLikeYtcConfirm) {
+      const queuedId = enqueueYtcFcm(ytcOrderId);
+      try { window.dispatchEvent(new CustomEvent('mygenie:ytc-fcm', { detail: { orderId: queuedId || ytcOrderId } })); }
+      catch { /* ignore */ }
+    }
+
     console.log('[Notification] Extracted - title:', title, '| body:', body);
     console.log('[Notification] Sound - from payload:', soundKey, '| resolved:', resolvedSound);
 
@@ -177,10 +198,21 @@ export const NotificationProvider = ({ children }) => {
       return;
     }
 
-    // Play sound (SoundManager handles silent, unknown keys, etc.)
+    // BUG-747: play only after sidebar Ringer unlock (Tap to enable) and not Silent Mode.
+    // 'silent' always runs (it just stops current audio). Not-unlocked → show unlock
+    // banner; intentional Silent Mode → suppress with no banner.
     if (resolvedSound) {
-      console.log('[Notification] Playing sound:', resolvedSound);
-      soundManager.play(resolvedSound);
+      if (resolvedSound === 'silent') {
+        soundManager.play('silent');
+      } else if (!audioUnlockedRef.current) {
+        console.log('[Notification] Sound suppressed — Tap to enable ringer first:', resolvedSound);
+        setAudioBlockedAt(Date.now());
+      } else if (!soundEnabledRef.current) {
+        console.log('[Notification] Sound suppressed — Silent Mode:', resolvedSound);
+      } else {
+        console.log('[Notification] Playing sound:', resolvedSound);
+        soundManager.play(resolvedSound);
+      }
     }
 
     // Silent notification: stop sound, don't show anything
@@ -303,6 +335,19 @@ export const NotificationProvider = ({ children }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated]);
 
+  // BUG-747: unlock autoplay (sidebar "Tap to enable" / banner only — not random clicks)
+  const unlockAudioNow = useCallback(async () => {
+    const ok = await soundManager.unlock();
+    if (ok) { setAudioUnlocked(true); setAudioBlockedAt(0); }
+    return ok;
+  }, []);
+  // Lock on boot if autoplay not unlocked; re-lock when a real play is blocked.
+  useEffect(() => {
+    if (!soundManager.getState().isUnlocked) { setAudioUnlocked(false); setAudioBlockedAt(Date.now()); }
+    soundManager.setBlockedHandler(() => { setAudioUnlocked(false); setAudioBlockedAt(Date.now()); });
+    return () => { soundManager.setBlockedHandler(null); };
+  }, []);
+
   // Sync sound enabled state
   useEffect(() => {
     soundManager.setEnabled(soundEnabled);
@@ -356,6 +401,9 @@ export const NotificationProvider = ({ children }) => {
     simulateNotification: processNotification,
     swUpdatePending,            // BUG-597
     triggerSwUpdate,            // BUG-621
+    audioUnlocked,              // BUG-747
+    audioBlockedAt,             // BUG-747
+    unlockAudioNow,             // BUG-747
   }), [
     notifications,
     unreadCount,
@@ -369,11 +417,15 @@ export const NotificationProvider = ({ children }) => {
     processNotification,
     swUpdatePending,            // BUG-597
     triggerSwUpdate,            // BUG-621
+    audioUnlocked,              // BUG-747
+    audioBlockedAt,             // BUG-747
+    unlockAudioNow,             // BUG-747
   ]);
 
   return (
     <NotificationContext.Provider value={value}>
       {children}
+      <SoundUnlockBanner />
     </NotificationContext.Provider>
   );
 };

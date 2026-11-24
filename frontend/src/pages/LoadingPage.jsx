@@ -4,6 +4,7 @@ import { Check, Loader2, AlertCircle } from "lucide-react";
 import { COLORS, GENIE_LOGO_URL } from "../constants";
 import { useToast } from "../hooks/use-toast";
 import { API_LOADING_ORDER, LOADING_STATES, PAGINATION } from "../api/constants"; // BUG-451
+import { peekYtcFcmPending } from "../utils/ytcFcmPending"; // BUG-751
 import { useAuth, useRestaurant, useMenu, useTables, useSettings, useOrders, useStations } from "../contexts";
 import * as profileService from "../api/services/profileService";
 import { setCrmRestaurantId } from "../api/crmAxios";
@@ -33,7 +34,7 @@ const LoadingPage = () => {
   const { setCategories, setProducts, setPopularProducts } = useMenu(); // BUG-340: +setPopularProducts
   const { setTables } = useTables();
   const { setCancellationReasons } = useSettings();
-  const { setOrders } = useOrders();
+  const { setOrders, orders: contextOrders } = useOrders(); // BUG-751
   const { 
     setAvailableStations, 
     initializeConfig, 
@@ -624,7 +625,14 @@ const LoadingPage = () => {
     // setOrders(POS) would wipe aggregator orders added via addOrder.
     if (data.runningOrders) {
       const combined = [...data.runningOrders, ...(data.aggregatorOrders || [])];
-      setOrders(combined);
+      // BUG-751: preserve optimistic YTC/web-edit orders added by YtcFcmHydrator during
+      // /loading (FCM can arrive before running-orders returns).
+      const combinedIds = new Set(combined.map((o) => Number(o.orderId)));
+      const pendingYtc = new Set(peekYtcFcmPending());
+      const preserveYtc = (Array.isArray(contextOrders) ? contextOrders : []).filter(
+        (o) => o && pendingYtc.has(Number(o.orderId)) && !combinedIds.has(Number(o.orderId))
+      );
+      setOrders(preserveYtc.length ? [...combined, ...preserveYtc] : combined);
     }
 
     loadedDataRef.current = data;
