@@ -38518,6 +38518,11 @@
           "label": "Re-intake intake doc (CR-527a cust_* holder re-map)",
           "path": "memory/change_requests/CR-527_CUST_HOLDER_REMAP_REINTAKE_INTAKE.md",
           "type": "intake"
+        },
+        {
+          "label": "Impact Analysis (CR-527a cust_* holder re-map)",
+          "path": "memory/impact/CR-527_CUST_HOLDER_REMAP_IMPACT_ANALYSIS.md",
+          "type": "impact"
         }
       ],
       "release_date": "2026-11-17",
@@ -38534,7 +38539,7 @@
         "frontend/src/components/order-entry/CollectPaymentPanel.jsx",
         "frontend/src/components/reports/OrderDetailSheet.jsx"
       ],
-      "next_action": "CR-527a slice: PLANNING Gate 2 (Impact Analysis) for cust_* holder re-map (Option B), then cherry-pick orderTransform.js + orderTransform.cr527.test.js hunks from notification-fix (no code until Gate-4 GO). [capture phase] QA browser flow + live write-probe Part A still pending."
+      "next_action": "CR-527a slice: GATE_2_IA_COMPLETE 2026-11-24 (impact/CR-527_CUST_HOLDER_REMAP_IMPACT_ANALYSIS.md). BLOCKED on owner decisions OD-527a-1/2/3 (holder in cust_* re-attributes CRM spend to holder; FE workaround vs backend fix; holder-not-CRM-linked edge). Then PLANNING Gate 3 + cherry-pick orderTransform.js + cr527.test.js hunks from notification-fix (no code until Gate-4 GO). NOTE: root cause is backend (user_name from cust_name) — Option B is a FE workaround; Issue-2 credit-ledger sync is a SEPARATE backend bug, out of scope. [capture phase] QA browser flow + live write-probe Part A still pending."
     },
     {
       "id": "CR-528",
